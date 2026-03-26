@@ -99,22 +99,28 @@ class Scanner:
             return
 
         if not audio_chunks:
+            log.debug(f"{freq_hz/1e6:.4f}: no audio data")
             return
 
         raw_audio = b"".join(audio_chunks)
+        duration = len(raw_audio) / (AUDIO_RATE * 2)
         if len(raw_audio) < AUDIO_RATE:  # less than 0.5s
+            log.debug(f"{freq_hz/1e6:.4f}: too short ({duration:.1f}s)")
             return
 
         # Energy check
         energy = self._calc_energy(raw_audio)
         if energy < self.cfg.energy_threshold_db:
+            log.debug(f"{freq_hz/1e6:.4f}: below energy threshold ({energy:.1f} < {self.cfg.energy_threshold_db})")
             return
 
         # VAD check
         vad_score = self._run_vad(raw_audio)
         if self.cfg.vad_enabled and vad_score < self.cfg.vad_threshold:
+            log.debug(f"{freq_hz/1e6:.4f}: VAD reject ({vad_score:.2f} < {self.cfg.vad_threshold})")
             return
 
+        log.info(f"{freq_hz/1e6:.4f} MHz: VOICE detected! energy={energy:.1f}dB vad={vad_score:.2f} duration={duration:.1f}s")
         # Save recording
         await self._save_recording(freq_hz, freq_info, raw_audio, energy, vad_score)
 
@@ -211,7 +217,7 @@ class Scanner:
         """Save audio as WAV and add to database."""
         freq_id = freq_info["id"]
         ts = time.strftime("%Y%m%d_%H%M%S")
-        freq_label = freq_info.get("label") or f"{freq_hz / 1e6:.4f}MHz"
+        freq_label = (freq_info.get("label") or f"{freq_hz / 1e6:.4f}MHz").replace("/", "-")
         filename = f"{ts}_{freq_label}.wav"
         filepath = self.cfg.recordings_dir / filename
 

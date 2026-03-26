@@ -85,27 +85,52 @@ class ScanPiApp:
             await self.shutdown()
 
     async def _survey_then_scan(self):
-        """Phase 1: initial survey, then start scanning with periodic re-surveys."""
-        log.info("Starting initial survey...")
+        """Single-SDR orchestrator: survey → coalesce → scan loop (with periodic re-surveys)."""
         try:
-            detections = await self.surveyor.full_survey()
-            log.info(f"Initial survey found {len(detections)} signals")
+            # Phase 1: Initial survey (SDR exclusive)
+            stats = self.db.get_stats()
+            if stats["total_frequencies"] == 0:
+                log.info("No frequencies in DB — running initial survey...")
+                detections = await self.surveyor.full_survey()
+                log.info(f"Initial survey found {len(detections)} signals")
+                if detections:
+                    channels = coalesce_frequencies(self.db)
+                    auto_label_channels(self.db)
+                    log.info(f"Coalesced to {channels} channels")
+            else:
+                log.info(f"DB has {stats['total_frequencies']} frequencies — skipping initial survey")
 
-            # Coalesce bins into channels and auto-label
-            if detections:
-                channels = coalesce_frequencies(self.db)
-                auto_label_channels(self.db)
-                log.info(f"Coalesced to {channels} channels")
+            # Phase 2: Scan loop — scanner owns the SDR, yields periodically for re-survey
+            scan_cycles = 0
+            while self.scanner._running or not scan_cycles:
+                # Scan for N cycles
+                queue = self.db.get_scan_queue(limit=50)
+                if not queue:
+                    log.info("No scannable frequencies — running survey")
+                    await self.surveyor.full_survey()
+                    coalesce_frequencies(self.db)
+                    auto_label_channels(self.db)
+                    await asyncio.sleep(10)
+                    continue
 
-                # Classify a sample of discovered frequencies
-                log.info("Classifying discovered signals...")
-                await self.classifier.classify_all_unknown()
+                self.scanner._running = True
+                log.info(f"Scanning {len(queue)} frequencies...")
+                for freq_info in queue:
+                    if not self.scanner._running:
+                        break
+                    freq_hz = freq_info["freq_hz"]
+                    dwell = self.scanner._calc_dwell(freq_info)
+                    await self.scanner._dwell_on(freq_hz, dwell, freq_info)
 
-            # Start scanning loop (interleaved with periodic surveys)
-            scan_task = asyncio.create_task(self.scanner.start())
-            survey_task = asyncio.create_task(self.surveyor.survey_loop())
+                scan_cycles += 1
 
-            await asyncio.gather(scan_task, survey_task)
+                # Every 10 cycles, yield SDR for a re-survey
+                if scan_cycles % 10 == 0:
+                    log.info("Pausing scanner for re-survey...")
+                    self.scanner._current_freq = None
+                    await self.surveyor.full_survey()
+                    coalesce_frequencies(self.db)
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
