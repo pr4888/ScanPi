@@ -199,11 +199,15 @@ tr:hover td { background: var(--bg3); }
       <option value="nxdn">NXDN</option>
       <option value="unknown">Unknown</option>
     </select>
-    <button class="btn" onclick="triggerSurvey()">Run Survey</button>
+    <button class="btn" onclick="triggerSurvey()">Survey</button>
+    <button class="btn btn-outline" onclick="coalesceFreqs()">Coalesce</button>
+    <button class="btn btn-outline" onclick="discoverTrunking()">Find P25</button>
+    <label style="color:var(--text2);font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="c-enabled-only" onchange="refreshCatalog()" /> Active only</label>
   </div>
+  <div id="c-summary" class="card" style="margin-bottom:12px;display:flex;gap:24px;font-size:13px"></div>
   <div class="card">
     <table>
-      <thead><tr><th>MHz</th><th>Mode</th><th>Label</th><th>Score</th><th>Observations</th><th>CTCSS</th><th>FCC</th><th>First Seen</th><th></th></tr></thead>
+      <thead><tr><th>MHz</th><th>Mode</th><th>Band/Label</th><th>Score</th><th>Observations</th><th>CTCSS</th><th>BW</th><th>First Seen</th><th></th></tr></thead>
       <tbody id="c-table"></tbody>
     </table>
   </div>
@@ -357,11 +361,20 @@ async function manualTuneHz(hz) {
 // --- Catalog ---
 async function refreshCatalog() {
   const mode = document.getElementById('c-filter-mode').value;
-  const url = 'frequencies' + (mode ? '?mode=' + mode : '');
+  const enabledOnly = document.getElementById('c-enabled-only').checked;
+  let url = 'frequencies?';
+  if (mode) url += 'mode=' + mode + '&';
+  if (enabledOnly) url += 'enabled=true&';
   const data = await api(url);
   if (!data) return;
   allFreqs = data.frequencies;
-  renderCatalog(allFreqs);
+  filterCatalog();
+  // Band summary
+  const bands = {};
+  data.frequencies.forEach(f => { const l = f.label || 'Unknown'; bands[l] = (bands[l]||0) + 1; });
+  document.getElementById('c-summary').innerHTML = Object.entries(bands)
+    .sort((a,b) => b[1]-a[1]).slice(0,8)
+    .map(([k,v]) => `<span><strong>${v}</strong> ${k}</span>`).join('');
 }
 
 function filterCatalog() {
@@ -373,6 +386,15 @@ function filterCatalog() {
   renderCatalog(filtered);
 }
 
+async function coalesceFreqs() {
+  const r = await api('frequencies/coalesce', { method: 'POST' });
+  if (r) { alert(`Coalesced to ${r.channels} channels`); refreshCatalog(); }
+}
+async function discoverTrunking() {
+  const r = await api('trunking/discover', { method: 'POST' });
+  if (r) alert(`Found ${r.count} P25 control channels`);
+}
+
 function renderCatalog(freqs) {
   document.getElementById('c-table').innerHTML = freqs.map(f => `
     <tr>
@@ -382,7 +404,7 @@ function renderCatalog(freqs) {
       <td>${(f.activity_score||0).toFixed(2)}</td>
       <td>${f.observation_count||0}</td>
       <td class="mono">${f.ctcss_tone ? f.ctcss_tone.toFixed(1) : '-'}</td>
-      <td>${f.fcc_licensee || '-'}</td>
+      <td class="mono">${f.bandwidth_hz ? (f.bandwidth_hz/1000).toFixed(1)+'k' : '-'}</td>
       <td>${timeAgo(f.first_seen)}</td>
       <td>
         <button class="btn btn-sm ${f.enabled?'':'btn-outline'}" onclick="toggleFreq(${f.freq_hz})">${f.enabled?'ON':'OFF'}</button>

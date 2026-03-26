@@ -10,12 +10,14 @@ import uvicorn
 
 from .api import create_app
 from .classifier import Classifier
+from .coalesce import coalesce_frequencies, auto_label_channels
 from .config import ScanConfig
 from .db import ScanPiDB
 from .scanner import Scanner
 from .storage import StorageManager
 from .surveyor import Surveyor
 from .transcriber import Transcriber
+from .trunking import TrunkingManager
 
 log = logging.getLogger("scanpi")
 
@@ -30,7 +32,9 @@ class ScanPiApp:
         self.classifier = Classifier(cfg, self.db)
         self.scanner = Scanner(cfg, self.db)
         self.transcriber = Transcriber(cfg, self.db)
+        self.trunking = TrunkingManager(cfg, self.db)
         self.storage = StorageManager(cfg, self.db)
+        self._sdr_lock = asyncio.Lock()  # single SDR mutex
         self._tasks: list[asyncio.Task] = []
 
     async def start(self):
@@ -44,12 +48,16 @@ class ScanPiApp:
         # Storage maintenance on startup
         self.storage.maintenance()
 
+        # Check for OP25/trunking support
+        self.trunking.detect_op25()
+
         # Create FastAPI app
         app = create_app(
             self.cfg, self.db,
             scanner=self.scanner,
             surveyor=self.surveyor,
             transcriber=self.transcriber,
+            trunking=self.trunking,
             storage=self.storage,
         )
 
@@ -83,8 +91,13 @@ class ScanPiApp:
             detections = await self.surveyor.full_survey()
             log.info(f"Initial survey found {len(detections)} signals")
 
-            # Classify discovered frequencies
+            # Coalesce bins into channels and auto-label
             if detections:
+                channels = coalesce_frequencies(self.db)
+                auto_label_channels(self.db)
+                log.info(f"Coalesced to {channels} channels")
+
+                # Classify a sample of discovered frequencies
                 log.info("Classifying discovered signals...")
                 await self.classifier.classify_all_unknown()
 

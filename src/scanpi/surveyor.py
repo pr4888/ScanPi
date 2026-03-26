@@ -98,30 +98,32 @@ class Surveyor:
         # Average power per frequency bin
         avg_power = {f: sum(ps) / len(ps) for f, ps in power_by_freq.items()}
 
-        # Update noise floor in DB
-        for freq_hz, pwr in avg_power.items():
-            self.db.update_noise_floor(freq_hz, pwr)
-
-        # Detect signals above threshold
+        # Detect signals above threshold FIRST (before updating noise floor)
         detections = []
         all_powers = list(avg_power.values())
         median_power = sorted(all_powers)[len(all_powers) // 2]
+        signal_freqs = set()
 
         for freq_hz, pwr in avg_power.items():
-            noise = self.db.get_noise_floor(freq_hz) or median_power
-            snr = pwr - noise
+            snr = pwr - median_power
             if snr >= self.cfg.detection_threshold_db:
                 det = SignalDetection(
                     freq_hz=freq_hz,
                     power_db=pwr,
-                    noise_floor_db=noise,
+                    noise_floor_db=median_power,
                     snr_db=snr,
                 )
                 detections.append(det)
                 # Add to catalog
+                signal_freqs.add(freq_hz)
                 self.db.upsert_frequency(freq_hz, pwr)
                 self.db.log_event("signal_detected", freq_hz,
                                   f'{{"snr": {snr:.1f}, "band": "{band.name}"}}')
+
+        # Update noise floor AFTER detection — only for non-signal bins
+        for freq_hz, pwr in avg_power.items():
+            if freq_hz not in signal_freqs:
+                self.db.update_noise_floor(freq_hz, pwr)
 
         log.info(f"{band.name}: {len(detections)} signals above {self.cfg.detection_threshold_db} dB threshold")
         return detections

@@ -16,7 +16,7 @@ STATIC_DIR = Path(__file__).parent / "web" / "static"
 
 
 def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
-               transcriber=None, storage=None) -> FastAPI:
+               transcriber=None, trunking=None, storage=None) -> FastAPI:
     app = FastAPI(title="ScanPi", version="0.1.0")
 
     # Serve static files
@@ -170,6 +170,50 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
         import asyncio
         asyncio.create_task(surveyor.full_survey())
         return {"ok": True, "message": "Survey started"}
+
+    # --- Trunking ---
+
+    @app.get("/api/trunking/status")
+    async def trunking_status():
+        if not trunking:
+            return {"available": False}
+        return {"available": True, **trunking.get_status()}
+
+    @app.post("/api/trunking/discover")
+    async def discover_trunking():
+        """Scan for P25 control channels."""
+        if not trunking:
+            raise HTTPException(503, "Trunking not available")
+        import asyncio
+        channels = await trunking.discover_control_channels()
+        if channels:
+            trunking.generate_op25_config(channels)
+        return {"control_channels": channels, "count": len(channels)}
+
+    @app.post("/api/trunking/start")
+    async def start_trunking():
+        if not trunking:
+            raise HTTPException(503)
+        import asyncio
+        asyncio.create_task(trunking.start_op25())
+        return {"ok": True}
+
+    @app.post("/api/trunking/stop")
+    async def stop_trunking():
+        if not trunking:
+            raise HTTPException(503)
+        await trunking.stop_op25()
+        return {"ok": True}
+
+    # --- Coalesce ---
+
+    @app.post("/api/frequencies/coalesce")
+    async def coalesce():
+        """Merge adjacent bins into channels."""
+        from .coalesce import coalesce_frequencies, auto_label_channels
+        channels = coalesce_frequencies(db)
+        auto_label_channels(db)
+        return {"channels": channels}
 
     # --- Settings ---
 

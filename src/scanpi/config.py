@@ -131,7 +131,6 @@ class ScanConfig:
             f'port = {self.port}',
             "",
             "# Band ranges for survey",
-            "[[survey.bands]]",
         ]
         for band in self.survey_bands:
             lines.extend([
