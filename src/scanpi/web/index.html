@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScanPi</title>
+<style>
+:root {
+  --bg: #0a0e14; --bg2: #121820; --bg3: #1a2230;
+  --text: #d4d8e0; --text2: #8a90a0; --accent: #3b82f6;
+  --green: #22c55e; --yellow: #eab308; --red: #ef4444;
+  --border: #2a3040;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+a { color: var(--accent); text-decoration: none; }
+
+/* Nav */
+nav { display: flex; align-items: center; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 16px; height: 48px; }
+nav .logo { font-size: 18px; font-weight: 700; margin-right: 24px; letter-spacing: -0.5px; }
+nav .logo span { color: var(--accent); }
+nav button { background: none; border: none; color: var(--text2); padding: 12px 16px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; height: 48px; }
+nav button:hover { color: var(--text); }
+nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+nav .spacer { flex: 1; }
+nav .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+nav .dot { width: 8px; height: 8px; border-radius: 50%; }
+nav .dot.on { background: var(--green); } nav .dot.off { background: var(--red); }
+
+/* Layout */
+.page { display: none; padding: 20px; max-width: 1400px; margin: 0 auto; }
+.page.active { display: block; }
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+/* Cards */
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.card h3 { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.stat { font-size: 28px; font-weight: 700; }
+.stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text2); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: var(--bg3); }
+.mono { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.badge-fm { background: #1e3a5f; color: #60a5fa; }
+.badge-p25 { background: #1a3f2a; color: #4ade80; }
+.badge-dmr { background: #3f2a1a; color: #fb923c; }
+.badge-unknown { background: #2a2a2a; color: #888; }
+.badge-nxdn { background: #3f1a3f; color: #c084fc; }
+
+/* Search */
+.search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.search-bar input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px; }
+.search-bar input:focus { outline: none; border-color: var(--accent); }
+
+/* Buttons */
+.btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn:hover { filter: brightness(1.15); }
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+.btn-outline { background: none; border: 1px solid var(--border); color: var(--text2); }
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Audio player */
+.player { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.player audio { height: 32px; width: 200px; }
+
+/* Scanner display */
+.freq-display { font-family: 'Cascadia Code', monospace; font-size: 36px; font-weight: 700; color: var(--green); text-align: center; padding: 24px; }
+.freq-display .unit { font-size: 18px; color: var(--text2); }
+
+/* Progress bar */
+.progress { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent); transition: width 0.3s; }
+.progress-bar.warn { background: var(--yellow); }
+.progress-bar.danger { background: var(--red); }
+
+/* Activity list */
+.activity-item { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.activity-time { color: var(--text2); min-width: 60px; font-family: monospace; }
+.activity-type { min-width: 100px; }
+
+/* Settings form */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px; }
+.form-group input, .form-group select { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px; width: 100%; }
+.form-group input[type="checkbox"] { width: auto; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Scan<span>Pi</span></div>
+  <button class="active" onclick="showPage('dashboard')">Dashboard</button>
+  <button onclick="showPage('scanner')">Scanner</button>
+  <button onclick="showPage('catalog')">Catalog</button>
+  <button onclick="showPage('recordings')">Recordings</button>
+  <button onclick="showPage('settings')">Settings</button>
+  <div class="spacer"></div>
+  <div class="status">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">connecting...</span>
+  </div>
+</nav>
+
+<!-- DASHBOARD -->
+<div class="page active" id="page-dashboard">
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Frequencies</h3>
+      <div class="stat" id="d-freqs">--</div>
+      <div class="stat-label">discovered</div>
+    </div>
+    <div class="card">
+      <h3>Recordings</h3>
+      <div class="stat" id="d-recs">--</div>
+      <div class="stat-label" id="d-recs-label">total</div>
+    </div>
+    <div class="card">
+      <h3>Transcribed</h3>
+      <div class="stat" id="d-trans">--</div>
+      <div class="stat-label">with text</div>
+    </div>
+    <div class="card">
+      <h3>Active Now</h3>
+      <div class="stat" id="d-active">--</div>
+      <div class="stat-label">last hour</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Currently Scanning</h3>
+      <div class="freq-display">
+        <span id="d-current-freq">---.----</span>
+        <span class="unit">MHz</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Storage</h3>
+      <div style="margin-bottom:8px">
+        <span id="d-storage-used">0</span> GB used of <span id="d-storage-total">0</span> GB
+      </div>
+      <div class="progress">
+        <div class="progress-bar" id="d-storage-bar" style="width:0%"></div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--text2)" id="d-overflow-info"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Recent Activity</h3>
+    <div id="d-activity"></div>
+  </div>
+</div>
+
+<!-- SCANNER -->
+<div class="page" id="page-scanner">
+  <div class="card" style="margin-bottom:16px">
+    <h3>Live Scanner</h3>
+    <div class="freq-display">
+      <span id="s-current-freq">---.----</span>
+      <span class="unit">MHz</span>
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <div class="search-bar" style="max-width:400px;margin:0 auto">
+        <input type="text" id="s-manual-freq" placeholder="Enter frequency (MHz)..." />
+        <button class="btn" onclick="manualTune()">Tune</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Top Active Frequencies</h3>
+    <table>
+      <thead><tr><th>Frequency</th><th>Mode</th><th>Label</th><th>Score</th><th>Last Seen</th><th></th></tr></thead>
+      <tbody id="s-freq-table"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CATALOG -->
+<div class="page" id="page-catalog">
+  <div class="search-bar">
+    <input type="text" id="c-search" placeholder="Search frequencies, labels..." oninput="filterCatalog()" />
+    <select id="c-filter-mode" onchange="filterCatalog()">
+      <option value="">All Modes</option>
+      <option value="analog_fm">Analog FM</option>
+      <option value="p25">P25</option>
+      <option value="dmr">DMR</option>
+      <option value="nxdn">NXDN</option>
+      <option value="unknown">Unknown</option>
+    </select>
+    <button class="btn" onclick="triggerSurvey()">Run Survey</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>MHz</th><th>Mode</th><th>Label</th><th>Score</th><th>Observations</th><th>CTCSS</th><th>FCC</th><th>First Seen</th><th></th></tr></thead>
+      <tbody id="c-table"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- RECORDINGS -->
+<div class="page" id="page-recordings">
+  <div class="search-bar">
+    <input type="text" id="r-search" placeholder="Search transcripts..." />
+    <button class="btn" onclick="searchRecordings()">Search</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Time</th><th>Frequency</th><th>Label</th><th>Duration</th><th>VAD</th><th>Transcript</th><th></th></tr></thead>
+      <tbody id="r-table"></tbody>
+    </table>
+    <div style="text-align:center;padding:12px">
+      <button class="btn btn-outline" onclick="loadMoreRecordings()">Load More</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="page" id="page-settings">
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>SDR</h3>
+      <div class="form-group"><label>Device Index</label><input type="number" id="set-device" value="0" /></div>
+      <div class="form-group"><label>Gain (auto or 0-49)</label><input type="text" id="set-gain" value="auto" /></div>
+      <div class="form-group"><label>PPM Correction</label><input type="number" id="set-ppm" value="0" /></div>
+    </div>
+    <div class="card">
+      <h3>Survey</h3>
+      <div class="form-group"><label>Detection Threshold (dB above noise)</label><input type="number" id="set-threshold" value="8" step="0.5" /></div>
+      <div class="form-group"><label>Re-survey Interval (minutes)</label><input type="number" id="set-interval" value="60" /></div>
+    </div>
+    <div class="card">
+      <h3>Recording</h3>
+      <div class="form-group"><label>Dwell Time (seconds)</label><input type="number" id="set-dwell" value="5" step="0.5" /></div>
+      <div class="form-group"><label><input type="checkbox" id="set-vad" checked /> Enable VAD (voice activity detection)</label></div>
+      <div class="form-group"><label>VAD Threshold (0-1)</label><input type="number" id="set-vad-thresh" value="0.5" step="0.05" min="0" max="1" /></div>
+    </div>
+    <div class="card">
+      <h3>Transcription</h3>
+      <div class="form-group"><label><input type="checkbox" id="set-transcribe" checked /> Enable Transcription</label></div>
+      <div class="form-group"><label>Whisper Model</label>
+        <select id="set-model">
+          <option value="tiny.en">tiny.en (~75MB RAM)</option>
+          <option value="base.en">base.en (~150MB RAM)</option>
+          <option value="small.en">small.en (~500MB RAM)</option>
+        </select>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Storage</h3>
+      <div class="form-group"><label>Retention (days)</label><input type="number" id="set-retention" value="30" /></div>
+      <div class="form-group"><label>Max Storage (GB)</label><input type="number" id="set-max-gb" value="32" /></div>
+    </div>
+    <div class="card" style="display:flex;align-items:end">
+      <button class="btn" onclick="saveSettings()" style="width:100%">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let currentPage = 'dashboard';
+let recordingOffset = 0;
+let allFreqs = [];
+
+// --- Navigation ---
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => { if (b.textContent.toLowerCase() === name) b.classList.add('active'); });
+  currentPage = name;
+  refresh();
+}
+
+// --- API helpers ---
+async function api(path, opts) {
+  try {
+    const r = await fetch('/api/' + path, opts);
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch(e) { console.error('API error:', path, e); return null; }
+}
+
+// --- Dashboard ---
+async function refreshDashboard() {
+  const s = await api('status');
+  if (!s) return;
+
+  document.getElementById('statusDot').className = 'dot ' + (s.scanner_active ? 'on' : 'off');
+  document.getElementById('statusText').textContent = s.scanner_active ? 'scanning' : 'idle';
+  document.getElementById('d-freqs').textContent = s.total_frequencies;
+  document.getElementById('d-recs').textContent = s.total_recordings;
+  document.getElementById('d-trans').textContent = s.transcribed;
+  document.getElementById('d-active').textContent = s.active_last_hour;
+  document.getElementById('d-current-freq').textContent = s.current_freq_mhz ? s.current_freq_mhz.toFixed(4) : '---.----';
+  document.getElementById('s-current-freq').textContent = s.current_freq_mhz ? s.current_freq_mhz.toFixed(4) : '---.----';
+
+  if (s.storage) {
+    const st = s.storage;
+    document.getElementById('d-storage-used').textContent = (st.recordings_size_gb || 0).toFixed(2);
+    document.getElementById('d-storage-total').textContent = (st.primary_total_gb || 0).toFixed(1);
+    const pct = st.primary_pct || 0;
+    const bar = document.getElementById('d-storage-bar');
+    bar.style.width = pct + '%';
+    bar.className = 'progress-bar' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
+    document.getElementById('d-overflow-info').textContent = st.overflow_mounted ? `Overflow: ${st.overflow_path} (${st.overflow_free_gb.toFixed(1)} GB free)` : 'No overflow storage mounted';
+  }
+
+  const act = await api('activity?limit=15');
+  if (act && act.events) {
+    document.getElementById('d-activity').innerHTML = act.events.map(e => {
+      const t = new Date(e.timestamp * 1000);
+      const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      return `<div class="activity-item"><span class="activity-time">${time}</span><span class="activity-type">${e.event_type}</span><span>${e.freq_hz ? (e.freq_hz/1e6).toFixed(4)+' MHz' : ''} ${e.detail||''}</span></div>`;
+    }).join('');
+  }
+}
+
+// --- Scanner ---
+async function refreshScanner() {
+  const data = await api('frequencies?enabled=true');
+  if (!data) return;
+  const tbody = document.getElementById('s-freq-table');
+  tbody.innerHTML = data.frequencies.slice(0, 20).map(f => `
+    <tr>
+      <td class="mono">${(f.freq_hz/1e6).toFixed(4)}</td>
+      <td>${modeBadge(f.mode)}</td>
+      <td>${f.label || ''}</td>
+      <td>${(f.activity_score||0).toFixed(2)}</td>
+      <td>${timeAgo(f.last_seen)}</td>
+      <td><button class="btn btn-sm" onclick="manualTuneHz(${f.freq_hz})">Tune</button></td>
+    </tr>
+  `).join('');
+}
+
+async function manualTune() {
+  const mhz = parseFloat(document.getElementById('s-manual-freq').value);
+  if (isNaN(mhz)) return;
+  await api('scanner/scan-now', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({freq_hz: Math.round(mhz * 1e6)}) });
+}
+async function manualTuneHz(hz) {
+  await api('scanner/scan-now', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({freq_hz: hz}) });
+}
+
+// --- Catalog ---
+async function refreshCatalog() {
+  const mode = document.getElementById('c-filter-mode').value;
+  const url = 'frequencies' + (mode ? '?mode=' + mode : '');
+  const data = await api(url);
+  if (!data) return;
+  allFreqs = data.frequencies;
+  renderCatalog(allFreqs);
+}
+
+function filterCatalog() {
+  const search = document.getElementById('c-search').value.toLowerCase();
+  const filtered = allFreqs.filter(f => {
+    const text = `${(f.freq_hz/1e6).toFixed(4)} ${f.label||''} ${f.fcc_licensee||''} ${f.mode||''}`.toLowerCase();
+    return text.includes(search);
+  });
+  renderCatalog(filtered);
+}
+
+function renderCatalog(freqs) {
+  document.getElementById('c-table').innerHTML = freqs.map(f => `
+    <tr>
+      <td class="mono">${(f.freq_hz/1e6).toFixed(4)}</td>
+      <td>${modeBadge(f.mode)}</td>
+      <td><input type="text" value="${f.label||''}" onchange="setLabel(${f.freq_hz}, this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;width:120px" /></td>
+      <td>${(f.activity_score||0).toFixed(2)}</td>
+      <td>${f.observation_count||0}</td>
+      <td class="mono">${f.ctcss_tone ? f.ctcss_tone.toFixed(1) : '-'}</td>
+      <td>${f.fcc_licensee || '-'}</td>
+      <td>${timeAgo(f.first_seen)}</td>
+      <td>
+        <button class="btn btn-sm ${f.enabled?'':'btn-outline'}" onclick="toggleFreq(${f.freq_hz})">${f.enabled?'ON':'OFF'}</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function setLabel(freqHz, label) {
+  await api(`frequencies/${freqHz}/label`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({label}) });
+}
+async function toggleFreq(freqHz) {
+  await api(`frequencies/${freqHz}/toggle`, { method:'POST' });
+  refreshCatalog();
+}
+async function triggerSurvey() {
+  await api('survey/run', { method:'POST' });
+}
+
+// --- Recordings ---
+async function refreshRecordings() {
+  recordingOffset = 0;
+  await loadRecordings();
+}
+
+async function loadRecordings(append) {
+  const search = document.getElementById('r-search').value;
+  const url = `recordings?limit=50&offset=${recordingOffset}` + (search ? `&search=${encodeURIComponent(search)}` : '');
+  const data = await api(url);
+  if (!data) return;
+  const html = data.recordings.map(r => `
+    <tr>
+      <td>${new Date(r.recorded_at*1000).toLocaleString()}</td>
+      <td class="mono">${r.freq_mhz ? r.freq_mhz.toFixed(4) : (r.freq_hz/1e6).toFixed(4)}</td>
+      <td>${r.label || r.mode || ''}</td>
+      <td>${r.duration_s ? r.duration_s.toFixed(1)+'s' : '-'}</td>
+      <td>${r.vad_confidence ? r.vad_confidence.toFixed(2) : '-'}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${r.transcript || '<span style="color:var(--text2)">—</span>'} ${!r.transcribed ? '<button class="btn btn-sm btn-outline" onclick="transcribeRec('+r.id+')">Transcribe</button>' : ''}</td>
+      <td><audio controls preload="none" src="/api/recordings/${r.id}/audio" style="height:28px;width:150px"></audio></td>
+    </tr>
+  `).join('');
+  const tbody = document.getElementById('r-table');
+  if (append) tbody.innerHTML += html;
+  else tbody.innerHTML = html;
+}
+
+function searchRecordings() { recordingOffset = 0; loadRecordings(); }
+function loadMoreRecordings() { recordingOffset += 50; loadRecordings(true); }
+async function transcribeRec(id) {
+  const r = await api(`recordings/${id}/transcribe`, { method:'POST' });
+  if (r && r.transcript) refreshRecordings();
+}
+
+// --- Settings ---
+async function refreshSettings() {
+  const s = await api('settings');
+  if (!s) return;
+  document.getElementById('set-device').value = s.sdr_device;
+  document.getElementById('set-gain').value = s.sdr_gain;
+  document.getElementById('set-ppm').value = s.sdr_ppm;
+  document.getElementById('set-threshold').value = s.detection_threshold_db;
+  document.getElementById('set-interval').value = s.survey_interval_min;
+  document.getElementById('set-dwell').value = s.dwell_time_s;
+  document.getElementById('set-vad').checked = s.vad_enabled;
+  document.getElementById('set-vad-thresh').value = s.vad_threshold;
+  document.getElementById('set-transcribe').checked = s.transcribe_enabled;
+  document.getElementById('set-model').value = s.transcribe_model;
+  document.getElementById('set-retention').value = s.retention_days;
+  document.getElementById('set-max-gb').value = s.max_storage_gb;
+}
+async function saveSettings() {
+  await api('settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+    sdr_gain: document.getElementById('set-gain').value,
+    sdr_ppm: parseInt(document.getElementById('set-ppm').value),
+    detection_threshold_db: parseFloat(document.getElementById('set-threshold').value),
+    dwell_time_s: parseFloat(document.getElementById('set-dwell').value),
+    vad_enabled: document.getElementById('set-vad').checked,
+    vad_threshold: parseFloat(document.getElementById('set-vad-thresh').value),
+    transcribe_enabled: document.getElementById('set-transcribe').checked,
+    retention_days: parseInt(document.getElementById('set-retention').value),
+    max_storage_gb: parseFloat(document.getElementById('set-max-gb').value),
+  })});
+  alert('Settings saved');
+}
+
+// --- Helpers ---
+function modeBadge(mode) {
+  const cls = {'analog_fm':'fm','p25':'p25','dmr':'dmr','nxdn':'nxdn'}[mode] || 'unknown';
+  return `<span class="badge badge-${cls}">${mode || 'unknown'}</span>`;
+}
+function timeAgo(ts) {
+  if (!ts) return '-';
+  const s = Math.floor(Date.now()/1000 - ts);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+// --- Refresh loop ---
+function refresh() {
+  if (currentPage === 'dashboard') refreshDashboard();
+  else if (currentPage === 'scanner') { refreshDashboard(); refreshScanner(); }
+  else if (currentPage === 'catalog') refreshCatalog();
+  else if (currentPage === 'recordings') refreshRecordings();
+  else if (currentPage === 'settings') refreshSettings();
+}
+
+refresh();
+setInterval(() => { if (currentPage === 'dashboard' || currentPage === 'scanner') refresh(); }, 5000);
+</script>
+</body>
+</html>
