@@ -16,7 +16,8 @@ STATIC_DIR = Path(__file__).parent / "web" / "static"
 
 
 def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
-               transcriber=None, trunking=None, storage=None) -> FastAPI:
+               transcriber=None, trunking=None, storage=None,
+               op25_bridge=None) -> FastAPI:
     app = FastAPI(title="ScanPi", version="0.1.0")
 
     # Serve static files
@@ -47,6 +48,49 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
     @app.on_event("startup")
     async def startup():
         app.state.start_time = time.time()
+
+    # --- Talkgroups & Calls (P25 trunking — the main experience) ---
+
+    @app.get("/api/talkgroups")
+    async def list_talkgroups():
+        if not op25_bridge:
+            return {"talkgroups": [], "count": 0}
+        tgs = op25_bridge.get_talkgroup_summary()
+        return {"talkgroups": tgs, "count": len(tgs)}
+
+    @app.get("/api/calls")
+    async def list_calls(
+        limit: int = 50,
+        tgid: int | None = None,
+        category: str | None = None,
+        search: str | None = None,
+    ):
+        if not op25_bridge:
+            return {"calls": [], "count": 0}
+        calls = op25_bridge.get_recent_calls(limit=limit, tgid=tgid, category=category)
+        if search:
+            calls = [c for c in calls if search.lower() in (c.get("transcript") or "").lower()
+                     or search.lower() in (c.get("tg_name") or "").lower()]
+        return {"calls": calls, "count": len(calls)}
+
+    @app.get("/api/calls/active")
+    async def active_calls():
+        if not op25_bridge:
+            return {"calls": []}
+        return {"calls": op25_bridge.get_active_calls()}
+
+    @app.get("/api/calls/{call_id}/audio")
+    async def call_audio(call_id: int):
+        if not op25_bridge:
+            raise HTTPException(503)
+        calls = op25_bridge.get_recent_calls(limit=10000)
+        match = [c for c in calls if c["id"] == call_id]
+        if not match or not match[0].get("filepath"):
+            raise HTTPException(404, "Audio not available")
+        filepath = Path(match[0]["filepath"])
+        if not filepath.exists():
+            raise HTTPException(404, "Audio file not found")
+        return FileResponse(str(filepath), media_type="audio/wav")
 
     # --- Frequencies ---
 

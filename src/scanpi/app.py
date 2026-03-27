@@ -5,6 +5,7 @@ import asyncio
 import logging
 import signal
 import sys
+from pathlib import Path
 
 import uvicorn
 
@@ -18,8 +19,12 @@ from .storage import StorageManager
 from .surveyor import Surveyor
 from .transcriber import Transcriber
 from .trunking import TrunkingManager
+from .op25_bridge import OP25Bridge
 
 log = logging.getLogger("scanpi")
+
+# Default talkgroups file path
+DEFAULT_TG_FILE = Path.home() / "op25" / "op25" / "gr-op25_repeater" / "apps" / "clmrn_talkgroups.tsv"
 
 
 class ScanPiApp:
@@ -34,7 +39,12 @@ class ScanPiApp:
         self.transcriber = Transcriber(cfg, self.db)
         self.trunking = TrunkingManager(cfg, self.db)
         self.storage = StorageManager(cfg, self.db)
-        self._sdr_lock = asyncio.Lock()  # single SDR mutex
+        self.op25_bridge = OP25Bridge(
+            cfg, self.db,
+            op25_log="/tmp/op25.log",
+            talkgroups_file=str(DEFAULT_TG_FILE) if DEFAULT_TG_FILE.exists() else None,
+        )
+        self._sdr_lock = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
 
     async def start(self):
@@ -59,10 +69,12 @@ class ScanPiApp:
             transcriber=self.transcriber,
             trunking=self.trunking,
             storage=self.storage,
+            op25_bridge=self.op25_bridge,
         )
 
         # Start background services
         self._tasks = [
+            asyncio.create_task(self._op25_bridge_loop(), name="op25_bridge"),
             asyncio.create_task(self._survey_then_scan(), name="survey_scan"),
             asyncio.create_task(self._transcription_loop(), name="transcribe"),
             asyncio.create_task(self._maintenance_loop(), name="maintenance"),
@@ -135,6 +147,15 @@ class ScanPiApp:
             pass
         except Exception as e:
             log.error(f"Survey/scan error: {e}", exc_info=True)
+
+    async def _op25_bridge_loop(self):
+        """Monitor OP25 log for talkgroup calls — the core experience."""
+        try:
+            await self.op25_bridge.start()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log.error(f"OP25 bridge error: {e}", exc_info=True)
 
     async def _transcription_loop(self):
         """Background transcription of recorded audio."""
