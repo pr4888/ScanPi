@@ -52,7 +52,9 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: v
 
 /* Call list (tracks) */
 .call-list { display: flex; flex-direction: column; }
-.call-row { display: grid; grid-template-columns: 24px 40px 1fr 100px 60px 40px; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.call-row { display: grid; grid-template-columns: 24px 40px 1fr 100px 60px 30px 30px; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.star-btn { background: none; border: none; color: var(--text3); font-size: 14px; cursor: pointer; padding: 2px; }
+.star-btn:hover { color: #fbbf24; } .star-btn.starred { color: #fbbf24; }
 .call-row:hover { background: var(--hover); }
 .call-row.playing { background: var(--bg3); }
 .call-row .num { color: var(--text3); font-size: 12px; text-align: right; }
@@ -132,6 +134,7 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: v
   <div class="nav-item active" onclick="showView('home')"><span class="icon">&#127968;</span> Home</div>
   <div class="nav-item" onclick="showView('recent')"><span class="icon">&#128340;</span> Recent Calls</div>
   <div class="nav-item" onclick="showView('search')"><span class="icon">&#128269;</span> Search</div>
+  <div class="nav-item" onclick="showView('saved')"><span class="icon">&#9733;</span> Saved</div>
 
   <h4>Departments</h4>
   <div id="sidebar-cats"></div>
@@ -161,8 +164,23 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: v
 
   <!-- RECENT CALLS VIEW -->
   <div id="view-recent" style="display:none">
-    <div class="page-header"><h1>Recent Calls</h1><p>All talkgroup calls, newest first</p></div>
+    <div class="page-header">
+      <h1>Recent Calls</h1>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <div style="display:flex;border:1px solid var(--border);border-radius:20px;overflow:hidden;font-size:12px">
+          <span onclick="recentSort='newest';refreshRecent()" id="rs-newest" style="padding:6px 12px;cursor:pointer">Newest First</span>
+          <span onclick="recentSort='oldest';refreshRecent()" id="rs-oldest" style="padding:6px 12px;cursor:pointer">Oldest First</span>
+        </div>
+        <button class="btn" onclick="if(playQueue.length)playCall(0)" style="font-size:12px;padding:6px 16px">&#9654; Play All</button>
+      </div>
+    </div>
     <div id="recent-calls" class="call-list"></div>
+  </div>
+
+  <!-- SAVED VIEW -->
+  <div id="view-saved" style="display:none">
+    <div class="page-header"><h1>Saved Calls</h1><p>Calls you starred</p></div>
+    <div id="saved-calls" class="call-list"></div>
   </div>
 
   <!-- SEARCH VIEW -->
@@ -219,7 +237,7 @@ async function api(path) {
 // --- Views ---
 function showView(name, data) {
   currentView = name;
-  ['home','recent','search','tgdetail'].forEach(v => {
+  ['home','recent','saved','search','tgdetail'].forEach(v => {
     document.getElementById('view-' + v).style.display = v === name ? 'block' : 'none';
   });
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -227,6 +245,7 @@ function showView(name, data) {
   if (nav) nav.classList.add('active');
   if (name === 'home') refreshHome();
   else if (name === 'recent') refreshRecent();
+  else if (name === 'saved') refreshSaved();
   else if (name === 'tgdetail') showTgDetail(data);
 }
 
@@ -307,10 +326,15 @@ function toggleCatFilter(cat) {
 }
 
 // --- Talkgroup Detail ---
+let tgSortOrder = 'oldest'; // 'oldest' = chronological (play order), 'newest' = browse order
+
 async function showTgDetail(tgid) {
   const tg = talkgroups.find(t => t.tgid === tgid) || { tgid, tg_name: `TG ${tgid}`, tg_category: 'other', icon: '&#128251;' };
-  const callsData = await api(`calls?tgid=${tgid}&limit=50`);
-  const calls = callsData ? callsData.calls : [];
+  const callsData = await api(`calls?tgid=${tgid}&limit=200`);
+  let calls = callsData ? callsData.calls : [];
+
+  // Default: oldest first (chronological — like listening to a conversation)
+  if (tgSortOrder === 'oldest') calls = calls.slice().reverse();
   playQueue = calls;
 
   const cat = tg.tg_category || 'other';
@@ -327,7 +351,13 @@ async function showTgDetail(tgid) {
         </div>
       </div>
     </div>
-    <button class="btn" onclick="playAllTg()" style="margin-bottom:16px">&#9654; Play All</button>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+      <button class="btn" onclick="playAllTg()">&#9654; Play All</button>
+      <div style="display:flex;border:1px solid var(--border);border-radius:20px;overflow:hidden;font-size:12px">
+        <span onclick="tgSortOrder='oldest';showTgDetail(${tgid})" style="padding:6px 12px;cursor:pointer;${tgSortOrder==='oldest'?'background:var(--bg4);color:var(--text)':'color:var(--text3)'}">Oldest First</span>
+        <span onclick="tgSortOrder='newest';showTgDetail(${tgid})" style="padding:6px 12px;cursor:pointer;${tgSortOrder==='newest'?'background:var(--bg4);color:var(--text)':'color:var(--text3)'}">Newest First</span>
+      </div>
+    </div>
     <div class="call-list">
       ${calls.length ? calls.map((c, i) => callRow(c, i)).join('') : '<div class="empty"><p>No calls recorded yet</p></div>'}
     </div>
@@ -335,11 +365,19 @@ async function showTgDetail(tgid) {
 }
 
 // --- Recent Calls ---
+let recentSort = 'newest';
+
 async function refreshRecent() {
   const data = await api('calls?limit=100');
   if (!data) return;
   recentCalls = data.calls;
+  if (recentSort === 'oldest') recentCalls = recentCalls.slice().reverse();
   playQueue = recentCalls;
+  // Update sort toggle styling
+  const nEl = document.getElementById('rs-newest');
+  const oEl = document.getElementById('rs-oldest');
+  if (nEl) { nEl.style.background = recentSort==='newest' ? 'var(--bg4)' : ''; nEl.style.color = recentSort==='newest' ? 'var(--text)' : 'var(--text3)'; }
+  if (oEl) { oEl.style.background = recentSort==='oldest' ? 'var(--bg4)' : ''; oEl.style.color = recentSort==='oldest' ? 'var(--text)' : 'var(--text3)'; }
   document.getElementById('recent-calls').innerHTML = recentCalls.length
     ? recentCalls.map((c, i) => callRow(c, i)).join('')
     : '<div class="empty"><div class="icon">&#128340;</div><p>No calls yet. Make sure OP25 is running.</p></div>';
@@ -362,9 +400,12 @@ async function doSearch() {
 }
 
 // --- Call Row ---
+let starredCalls = JSON.parse(localStorage.getItem('scanpi_starred') || '[]');
+
 function callRow(call, index) {
   const cat = call.tg_category || 'other';
   const icon = {'police':'&#128308;','fire':'&#128308;','ems':'&#128992;'}[cat] || '&#9898;';
+  const isStarred = starredCalls.includes(call.id);
   return `
     <div class="call-row ${currentCallIndex === index ? 'playing' : ''}" onclick="playCall(${index})">
       <span class="num">${index + 1}</span>
@@ -375,9 +416,45 @@ function callRow(call, index) {
       </div>
       <span class="time">${call.start_time ? timeAgo(call.start_time) : ''}</span>
       <span class="dur">${call.duration_s ? call.duration_s.toFixed(1) + 's' : ''}</span>
+      <button class="star-btn ${isStarred ? 'starred' : ''}" onclick="event.stopPropagation(); toggleStar(${call.id})" title="Save">${isStarred ? '&#9733;' : '&#9734;'}</button>
       <button class="play-btn" onclick="event.stopPropagation(); playCall(${index})">&#9654;</button>
     </div>
   `;
+}
+
+function toggleStar(callId) {
+  const idx = starredCalls.indexOf(callId);
+  if (idx >= 0) starredCalls.splice(idx, 1);
+  else starredCalls.push(callId);
+  localStorage.setItem('scanpi_starred', JSON.stringify(starredCalls));
+  // Re-render current view
+  if (currentView === 'recent') refreshRecent();
+  else if (currentView === 'saved') refreshSaved();
+  else if (currentView === 'tgdetail') {
+    // just toggle the star visually
+    document.querySelectorAll('.star-btn').forEach(btn => {
+      const id = parseInt(btn.getAttribute('onclick')?.match(/\d+/)?.[0]);
+      if (id === callId) {
+        btn.classList.toggle('starred');
+        btn.innerHTML = btn.classList.contains('starred') ? '&#9733;' : '&#9734;';
+      }
+    });
+  }
+}
+
+async function refreshSaved() {
+  if (!starredCalls.length) {
+    document.getElementById('saved-calls').innerHTML = '<div class="empty"><div class="icon">&#9734;</div><p>Star calls you want to keep. They\'ll appear here.</p></div>';
+    return;
+  }
+  // Fetch all recent and filter to starred
+  const data = await api('calls?limit=500');
+  if (!data) return;
+  const saved = data.calls.filter(c => starredCalls.includes(c.id));
+  playQueue = saved;
+  document.getElementById('saved-calls').innerHTML = saved.length
+    ? saved.map((c, i) => callRow(c, i)).join('')
+    : '<div class="empty"><p>Starred calls may have expired</p></div>';
 }
 
 // --- Audio Playback ---
