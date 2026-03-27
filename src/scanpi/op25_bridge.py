@@ -132,6 +132,9 @@ class OP25Bridge:
         # Ensure calls table exists
         self._ensure_calls_table()
 
+        # Start UDP audio receiver in a thread
+        self._start_audio_receiver()
+
         # Run log tailer and call finalizer concurrently
         await asyncio.gather(
             self._tail_log(),
@@ -196,6 +199,9 @@ class OP25Bridge:
         tg = self.get_talkgroup(tgid)
         tg.last_active = now
 
+        # Grab any buffered audio and assign to the active talkgroup
+        audio = self._grab_audio() if hasattr(self, '_audio_lock') else b""
+
         if tgid in self.active_calls:
             # Extend existing call
             call = self.active_calls[tgid]
@@ -203,45 +209,167 @@ class OP25Bridge:
             if rid > 0:
                 call.radio_id = rid
             call.freq_mhz = freq
+            if audio:
+                call.audio_chunks.append(audio)
         else:
-            # New call
-            self.active_calls[tgid] = ActiveCall(
+            # New call — flush audio from any other active call first
+            # (P25 single-channel: new TG = old TG call ended)
+            for other_tgid in list(self.active_calls.keys()):
+                if other_tgid != tgid:
+                    old_call = self.active_calls.pop(other_tgid)
+                    # Save synchronously (we're in the event loop via _process_line)
+                    self._save_call_sync(old_call)
+
+            call = ActiveCall(
                 tgid=tgid, start_time=now, last_update=now,
                 radio_id=rid, freq_mhz=freq,
             )
+            if audio:
+                call.audio_chunks.append(audio)
+            self.active_calls[tgid] = call
             log.info(f"Call started: {tg.name} (TG {tgid}) on {freq:.6f} MHz")
 
-    async def _finalize_loop(self):
-        """Periodically check for ended calls and save them."""
-        while self._running:
-            now = time.time()
-            ended = []
-            for tgid, call in self.active_calls.items():
-                if now - call.last_update > self._call_timeout:
-                    ended.append(tgid)
-
-            for tgid in ended:
-                call = self.active_calls.pop(tgid)
-                await self._save_call(call)
-
-            await asyncio.sleep(1.0)
-
-    async def _save_call(self, call: ActiveCall):
-        """Save a completed call to the database."""
+    def _save_call_sync(self, call: ActiveCall):
+        """Synchronous version of _save_call (for use from _process_line)."""
         tg = self.get_talkgroup(call.tgid)
         duration = call.last_update - call.start_time
         tg.call_count += 1
         tg.total_duration += duration
 
+        audio_data = b"".join(call.audio_chunks)
+        filepath = None
+        size_bytes = 0
+
+        if len(audio_data) > 320:
+            ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(call.start_time))
+            safe_name = tg.name.replace("/", "-").replace(" ", "_")
+            filename = f"{ts}_TG{call.tgid}_{safe_name}.wav"
+            filepath = str(self.cfg.recordings_dir / filename)
+            try:
+                with wave.open(filepath, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(8000)
+                    wf.writeframes(audio_data)
+                size_bytes = Path(filepath).stat().st_size
+            except Exception as e:
+                log.error(f"Failed to save audio: {e}")
+                filepath = None
+
         with self.db.cursor() as c:
             c.execute("""
                 INSERT INTO calls (tgid, tg_name, tg_category, radio_id, freq_mhz,
-                                   start_time, end_time, duration_s)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                   start_time, end_time, duration_s, filepath, size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (call.tgid, tg.name, tg.category, call.radio_id, call.freq_mhz,
-                  call.start_time, call.last_update, duration))
+                  call.start_time, call.last_update, duration, filepath, size_bytes))
 
-        log.info(f"Call saved: {tg.name} ({duration:.1f}s)")
+        if filepath:
+            log.info(f"Call saved: {tg.name} ({duration:.1f}s, {size_bytes/1024:.0f}KB)")
+        else:
+            log.info(f"Call logged: {tg.name} ({duration:.1f}s, no audio)")
+
+    async def _finalize_loop(self):
+        """Periodically check for ended calls, grab remaining audio, and save."""
+        while self._running:
+            now = time.time()
+            ended = []
+            for tgid, call in list(self.active_calls.items()):
+                if now - call.last_update > self._call_timeout:
+                    ended.append(tgid)
+
+            # Grab any remaining audio for ending calls
+            if ended and hasattr(self, '_audio_lock'):
+                remaining = self._grab_audio()
+                if remaining and ended:
+                    # Give remaining audio to the most recently active call
+                    latest = max(ended, key=lambda t: self.active_calls[t].last_update)
+                    self.active_calls[latest].audio_chunks.append(remaining)
+
+            for tgid in ended:
+                call = self.active_calls.pop(tgid)
+                self._save_call_sync(call)
+
+            await asyncio.sleep(1.0)
+
+    def _start_audio_receiver(self):
+        """Start UDP audio receiver in a background thread."""
+        import threading
+        self._audio_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._audio_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._audio_sock.bind(("0.0.0.0", 2345))
+        self._audio_sock.settimeout(1.0)
+        self._audio_buffer: list[bytes] = []
+        self._audio_lock = threading.Lock()
+
+        def recv_loop():
+            while self._running:
+                try:
+                    data, _ = self._audio_sock.recvfrom(65535)
+                    if len(data) > 2:  # skip 2-byte control packets
+                        with self._audio_lock:
+                            self._audio_buffer.append(data)
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+
+        t = threading.Thread(target=recv_loop, daemon=True)
+        t.start()
+        log.info("Audio receiver started on UDP 2345")
+
+    def _grab_audio(self) -> bytes:
+        """Grab all buffered audio and clear buffer."""
+        import threading
+        with self._audio_lock:
+            if not self._audio_buffer:
+                return b""
+            data = b"".join(self._audio_buffer)
+            self._audio_buffer.clear()
+            return data
+
+    async def _save_call(self, call: ActiveCall):
+        """Save a completed call with audio to the database."""
+        tg = self.get_talkgroup(call.tgid)
+        duration = call.last_update - call.start_time
+        tg.call_count += 1
+        tg.total_duration += duration
+
+        # Grab any buffered audio
+        audio_data = b"".join(call.audio_chunks)
+        filepath = None
+        size_bytes = 0
+
+        if len(audio_data) > 320:  # more than 1 packet
+            # Save as WAV (8kHz 16-bit mono — P25 IMBE decoded output)
+            ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(call.start_time))
+            safe_name = tg.name.replace("/", "-").replace(" ", "_")
+            filename = f"{ts}_TG{call.tgid}_{safe_name}.wav"
+            filepath = str(self.cfg.recordings_dir / filename)
+
+            try:
+                with wave.open(filepath, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # 16-bit
+                    wf.setframerate(8000)  # P25 audio is 8kHz
+                    wf.writeframes(audio_data)
+                size_bytes = Path(filepath).stat().st_size
+            except Exception as e:
+                log.error(f"Failed to save audio: {e}")
+                filepath = None
+
+        with self.db.cursor() as c:
+            c.execute("""
+                INSERT INTO calls (tgid, tg_name, tg_category, radio_id, freq_mhz,
+                                   start_time, end_time, duration_s, filepath, size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (call.tgid, tg.name, tg.category, call.radio_id, call.freq_mhz,
+                  call.start_time, call.last_update, duration, filepath, size_bytes))
+
+        if filepath:
+            log.info(f"Call saved: {tg.name} ({duration:.1f}s, {size_bytes/1024:.0f}KB audio)")
+        else:
+            log.info(f"Call saved: {tg.name} ({duration:.1f}s, no audio)")
 
     def get_recent_calls(self, limit: int = 50, tgid: int | None = None,
                          category: str | None = None) -> list[dict]:

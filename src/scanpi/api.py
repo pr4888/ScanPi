@@ -81,13 +81,12 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
 
     @app.get("/api/calls/{call_id}/audio")
     async def call_audio(call_id: int):
-        if not op25_bridge:
-            raise HTTPException(503)
-        calls = op25_bridge.get_recent_calls(limit=10000)
-        match = [c for c in calls if c["id"] == call_id]
-        if not match or not match[0].get("filepath"):
+        with db.cursor() as c:
+            c.execute("SELECT filepath FROM calls WHERE id = ?", (call_id,))
+            row = c.fetchone()
+        if not row or not row[0]:
             raise HTTPException(404, "Audio not available")
-        filepath = Path(match[0]["filepath"])
+        filepath = Path(row[0])
         if not filepath.exists():
             raise HTTPException(404, "Audio file not found")
         return FileResponse(str(filepath), media_type="audio/wav")
