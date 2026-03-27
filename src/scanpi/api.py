@@ -89,6 +89,22 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
         filepath = Path(row[0])
         if not filepath.exists():
             raise HTTPException(404, "Audio file not found")
+
+        # Upsample 8kHz to 48kHz for browser compatibility
+        import subprocess, tempfile
+        upsampled = filepath.with_suffix(".48k.wav")
+        if not upsampled.exists():
+            try:
+                subprocess.run([
+                    "ffmpeg", "-y", "-i", str(filepath),
+                    "-ar", "48000", "-ac", "1",
+                    "-af", "volume=3,highpass=f=200,lowpass=f=3400",
+                    str(upsampled),
+                ], capture_output=True, timeout=10)
+            except Exception:
+                return FileResponse(str(filepath), media_type="audio/wav")
+        if upsampled.exists():
+            return FileResponse(str(upsampled), media_type="audio/wav")
         return FileResponse(str(filepath), media_type="audio/wav")
 
     # --- Frequencies ---
