@@ -8,513 +8,553 @@
 :root {
   --bg: #0a0e14; --bg2: #121820; --bg3: #1a2230;
   --text: #d4d8e0; --text2: #8a90a0; --accent: #3b82f6;
-  --green: #22c55e; --yellow: #eab308; --red: #ef4444;
+  --green: #22c55e; --yellow: #eab308; --red: #ef4444; --orange: #f97316;
   --border: #2a3040;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
-a { color: var(--accent); text-decoration: none; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
 
 /* Nav */
-nav { display: flex; align-items: center; gap: 0; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 16px; height: 48px; }
-nav .logo { font-size: 18px; font-weight: 700; margin-right: 24px; letter-spacing: -0.5px; }
-nav .logo span { color: var(--accent); }
+nav { display: flex; align-items: center; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 16px; height: 48px; }
+nav .logo { font-size: 18px; font-weight: 700; margin-right: 24px; } nav .logo span { color: var(--accent); }
 nav button { background: none; border: none; color: var(--text2); padding: 12px 16px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; height: 48px; }
-nav button:hover { color: var(--text); }
-nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+nav button:hover { color: var(--text); } nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
 nav .spacer { flex: 1; }
 nav .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
-nav .dot { width: 8px; height: 8px; border-radius: 50%; }
-nav .dot.on { background: var(--green); } nav .dot.off { background: var(--red); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.on { background: var(--green); } .dot.off { background: var(--red); } .dot.warn { background: var(--yellow); }
 
 /* Layout */
-.page { display: none; padding: 20px; max-width: 1400px; margin: 0 auto; }
-.page.active { display: block; }
-.grid { display: grid; gap: 16px; }
-.grid-2 { grid-template-columns: 1fr 1fr; }
-.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
-.grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
-@media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+.page { display: none; padding: 16px; max-width: 1400px; margin: 0 auto; } .page.active { display: block; }
+.grid { display: grid; gap: 12px; } .grid-4 { grid-template-columns: repeat(4,1fr); }
+@media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 500px) { .grid-4 { grid-template-columns: 1fr; } }
 
 /* Cards */
-.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-.card h3 { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-.stat { font-size: 28px; font-weight: 700; }
-.stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.card h3 { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.stat { font-size: 26px; font-weight: 700; } .stat-label { font-size: 11px; color: var(--text2); margin-top: 2px; }
 
-/* Tables */
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; color: var(--text2); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
-tr:hover td { background: var(--bg3); }
-.mono { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+/* Category colors */
+.cat-police { border-left: 3px solid #3b82f6; } .cat-fire { border-left: 3px solid #ef4444; }
+.cat-ems { border-left: 3px solid #f97316; } .cat-marine { border-left: 3px solid #06b6d4; }
+.cat-weather { border-left: 3px solid #22c55e; } .cat-utility { border-left: 3px solid #a855f7; }
+.cat-ham { border-left: 3px solid #eab308; } .cat-other { border-left: 3px solid #64748b; }
 
-/* Badges */
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-.badge-fm { background: #1e3a5f; color: #60a5fa; }
-.badge-p25 { background: #1a3f2a; color: #4ade80; }
-.badge-dmr { background: #3f2a1a; color: #fb923c; }
-.badge-unknown { background: #2a2a2a; color: #888; }
-.badge-nxdn { background: #3f1a3f; color: #c084fc; }
-
-/* Search */
-.search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-.search-bar input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px; }
-.search-bar input:focus { outline: none; border-color: var(--accent); }
+/* Category badges */
+.cat-badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+.cat-badge-police { background: #1e3a5f; color: #60a5fa; } .cat-badge-fire { background: #4a1515; color: #f87171; }
+.cat-badge-ems { background: #4a2a15; color: #fb923c; } .cat-badge-marine { background: #0e3a3f; color: #22d3ee; }
+.cat-badge-weather { background: #1a3f2a; color: #4ade80; } .cat-badge-utility { background: #2f1a4f; color: #c084fc; }
+.cat-badge-ham { background: #3f3a1a; color: #facc15; } .cat-badge-other { background: #2a2a2a; color: #94a3b8; }
 
 /* Buttons */
 .btn { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; font-weight: 500; }
 .btn:hover { filter: brightness(1.15); }
-.btn-sm { padding: 3px 8px; font-size: 11px; }
+.btn-sm { padding: 3px 10px; font-size: 11px; } .btn-xs { padding: 2px 6px; font-size: 10px; }
 .btn-outline { background: none; border: 1px solid var(--border); color: var(--text2); }
 .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+.btn-fav { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 18px; padding: 2px 4px; }
+.btn-fav.active { color: var(--yellow); }
 
-/* Audio player */
-.player { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.player audio { height: 32px; width: 200px; }
+/* Channel list */
+.ch-list { display: flex; flex-direction: column; gap: 2px; }
+.ch-row { display: grid; grid-template-columns: 30px 110px 1fr 80px 70px 70px 50px; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 0.1s; font-size: 13px; }
+.ch-row:hover { background: var(--bg3); }
+.ch-row.active { border-color: var(--accent); background: var(--bg3); }
+.ch-row .freq { font-family: 'Cascadia Code', monospace; font-size: 13px; color: var(--accent); }
+.ch-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-row .count { text-align: right; color: var(--text2); font-size: 12px; }
+.ch-row .time { text-align: right; color: var(--text2); font-size: 11px; }
 
-/* Scanner display */
-.freq-display { font-family: 'Cascadia Code', monospace; font-size: 36px; font-weight: 700; color: var(--green); text-align: center; padding: 24px; }
-.freq-display .unit { font-size: 18px; color: var(--text2); }
+/* Channel detail panel */
+.ch-detail { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 12px; }
+.ch-detail h2 { font-size: 16px; margin-bottom: 4px; }
+.ch-detail .meta { color: var(--text2); font-size: 12px; margin-bottom: 12px; }
 
-/* Progress bar */
-.progress { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+/* Recording list in detail */
+.rec-row { display: grid; grid-template-columns: 140px 50px 1fr 200px; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.rec-row:hover { background: var(--bg3); }
+.rec-row audio { height: 28px; width: 190px; }
+.rec-transcript { color: var(--text2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Search & filter bar */
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.toolbar input, .toolbar select { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; color: var(--text); font-size: 13px; }
+.toolbar input { flex: 1; min-width: 150px; } .toolbar input:focus { outline: none; border-color: var(--accent); }
+
+/* Filter chips */
+.chip { display: inline-block; padding: 3px 10px; border-radius: 14px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); color: var(--text2); margin-right: 4px; }
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* Modal */
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; justify-content: center; align-items: center; }
+.modal-bg.show { display: flex; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+.modal h3 { margin-bottom: 16px; } .modal .form-group { margin-bottom: 12px; }
+.modal label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+.modal input, .modal select, .modal textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: 13px; }
+.modal textarea { height: 60px; resize: vertical; }
+.modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* Progress */
+.progress { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
 .progress-bar { height: 100%; background: var(--accent); transition: width 0.3s; }
-.progress-bar.warn { background: var(--yellow); }
-.progress-bar.danger { background: var(--red); }
 
-/* Activity list */
-.activity-item { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.activity-time { color: var(--text2); min-width: 60px; font-family: monospace; }
-.activity-type { min-width: 100px; }
+/* Tabs */
+.tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.tab { padding: 8px 16px; cursor: pointer; color: var(--text2); font-size: 13px; border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--text); } .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* Settings form */
-.form-group { margin-bottom: 16px; }
-.form-group label { display: block; font-size: 13px; color: var(--text2); margin-bottom: 4px; }
-.form-group input, .form-group select { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px; width: 100%; }
-.form-group input[type="checkbox"] { width: auto; }
+/* Freq display */
+.freq-big { font-family: 'Cascadia Code', monospace; font-size: 32px; font-weight: 700; color: var(--green); text-align: center; padding: 16px; }
+.freq-big .unit { font-size: 16px; color: var(--text2); }
+
+/* Settings */
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+.form-group input, .form-group select { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: 13px; width: 100%; }
 </style>
 </head>
 <body>
 
 <nav>
   <div class="logo">Scan<span>Pi</span></div>
-  <button class="active" onclick="showPage('dashboard')">Dashboard</button>
-  <button onclick="showPage('scanner')">Scanner</button>
-  <button onclick="showPage('catalog')">Catalog</button>
-  <button onclick="showPage('recordings')">Recordings</button>
-  <button onclick="showPage('settings')">Settings</button>
+  <button class="active" data-page="channels">Channels</button>
+  <button data-page="favorites">Favorites</button>
+  <button data-page="recordings">Recordings</button>
+  <button data-page="scanner">Scanner</button>
+  <button data-page="settings">Settings</button>
   <div class="spacer"></div>
   <div class="status">
     <div class="dot" id="statusDot"></div>
-    <span id="statusText">connecting...</span>
+    <span id="statusText">...</span>
   </div>
 </nav>
 
-<!-- DASHBOARD -->
-<div class="page active" id="page-dashboard">
-  <div class="grid grid-4" style="margin-bottom:16px">
-    <div class="card">
-      <h3>Frequencies</h3>
-      <div class="stat" id="d-freqs">--</div>
-      <div class="stat-label">discovered</div>
-    </div>
-    <div class="card">
-      <h3>Recordings</h3>
-      <div class="stat" id="d-recs">--</div>
-      <div class="stat-label" id="d-recs-label">total</div>
-    </div>
-    <div class="card">
-      <h3>Transcribed</h3>
-      <div class="stat" id="d-trans">--</div>
-      <div class="stat-label">with text</div>
-    </div>
-    <div class="card">
-      <h3>Active Now</h3>
-      <div class="stat" id="d-active">--</div>
-      <div class="stat-label">last hour</div>
+<!-- CHANNELS (main view) -->
+<div class="page active" id="page-channels">
+  <div class="grid grid-4" style="margin-bottom:12px">
+    <div class="card"><h3>Channels</h3><div class="stat" id="st-ch">--</div><div class="stat-label">with recordings</div></div>
+    <div class="card"><h3>Recordings</h3><div class="stat" id="st-rec">--</div><div class="stat-label">captured</div></div>
+    <div class="card"><h3>Now Scanning</h3><div class="freq-big" style="font-size:20px;padding:4px"><span id="st-freq">---</span> <span class="unit">MHz</span></div></div>
+    <div class="card"><h3>Storage</h3><div class="stat" id="st-storage">--</div><div class="stat-label" id="st-storage-label">MB used</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="ch-search" placeholder="Search channels..." oninput="renderChannels()">
+    <div>
+      <span class="chip active" data-cat="all" onclick="filterCat(this)">All</span>
+      <span class="chip" data-cat="fire" onclick="filterCat(this)">Fire</span>
+      <span class="chip" data-cat="police" onclick="filterCat(this)">Police</span>
+      <span class="chip" data-cat="ems" onclick="filterCat(this)">EMS</span>
+      <span class="chip" data-cat="marine" onclick="filterCat(this)">Marine</span>
+      <span class="chip" data-cat="weather" onclick="filterCat(this)">Weather</span>
+      <span class="chip" data-cat="ham" onclick="filterCat(this)">HAM</span>
+      <span class="chip" data-cat="other" onclick="filterCat(this)">Other</span>
     </div>
   </div>
 
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Currently Scanning</h3>
-      <div class="freq-display">
-        <span id="d-current-freq">---.----</span>
-        <span class="unit">MHz</span>
-      </div>
-    </div>
-    <div class="card">
-      <h3>Storage</h3>
-      <div style="margin-bottom:8px">
-        <span id="d-storage-used">0</span> GB used of <span id="d-storage-total">0</span> GB
-      </div>
-      <div class="progress">
-        <div class="progress-bar" id="d-storage-bar" style="width:0%"></div>
-      </div>
-      <div style="margin-top:12px;font-size:12px;color:var(--text2)" id="d-overflow-info"></div>
-    </div>
+  <div class="ch-list" id="ch-list">
+    <div style="color:var(--text2);padding:20px;text-align:center">Loading channels...</div>
   </div>
 
-  <div class="card" style="margin-top:16px">
-    <h3>Recent Activity</h3>
-    <div id="d-activity"></div>
+  <div id="ch-detail" style="display:none"></div>
+</div>
+
+<!-- FAVORITES -->
+<div class="page" id="page-favorites">
+  <div class="toolbar">
+    <input type="text" id="fav-search" placeholder="Search favorites..." oninput="renderFavorites()">
+    <button class="btn" onclick="showAddFavModal()">+ Add Favorite</button>
+  </div>
+  <div id="fav-list" class="ch-list"></div>
+  <div id="fav-detail" style="display:none"></div>
+</div>
+
+<!-- RECORDINGS -->
+<div class="page" id="page-recordings">
+  <div class="toolbar">
+    <input type="text" id="rec-search" placeholder="Search transcripts...">
+    <button class="btn" onclick="searchRecs()">Search</button>
+  </div>
+  <div class="card">
+    <div id="rec-list"></div>
+    <div style="text-align:center;padding:8px"><button class="btn btn-outline" onclick="loadMoreRecs()">Load More</button></div>
   </div>
 </div>
 
 <!-- SCANNER -->
 <div class="page" id="page-scanner">
-  <div class="card" style="margin-bottom:16px">
-    <h3>Live Scanner</h3>
-    <div class="freq-display">
-      <span id="s-current-freq">---.----</span>
-      <span class="unit">MHz</span>
-    </div>
-    <div style="text-align:center;margin-top:8px">
-      <div class="search-bar" style="max-width:400px;margin:0 auto">
-        <input type="text" id="s-manual-freq" placeholder="Enter frequency (MHz)..." />
-        <button class="btn" onclick="manualTune()">Tune</button>
-      </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="freq-big"><span id="sc-freq">---.----</span> <span class="unit">MHz</span></div>
+    <div style="text-align:center">
+      <input type="text" id="sc-tune" placeholder="Enter MHz..." style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;width:200px">
+      <button class="btn btn-sm" onclick="manualTune()">Tune</button>
+      <button class="btn btn-sm btn-outline" onclick="triggerSurvey()">Survey</button>
+      <button class="btn btn-sm btn-outline" onclick="coalesceFreqs()">Coalesce</button>
     </div>
   </div>
-
   <div class="card">
-    <h3>Top Active Frequencies</h3>
-    <table>
-      <thead><tr><th>Frequency</th><th>Mode</th><th>Label</th><th>Score</th><th>Last Seen</th><th></th></tr></thead>
-      <tbody id="s-freq-table"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- CATALOG -->
-<div class="page" id="page-catalog">
-  <div class="search-bar">
-    <input type="text" id="c-search" placeholder="Search frequencies, labels..." oninput="filterCatalog()" />
-    <select id="c-filter-mode" onchange="filterCatalog()">
-      <option value="">All Modes</option>
-      <option value="analog_fm">Analog FM</option>
-      <option value="p25">P25</option>
-      <option value="dmr">DMR</option>
-      <option value="nxdn">NXDN</option>
-      <option value="unknown">Unknown</option>
-    </select>
-    <button class="btn" onclick="triggerSurvey()">Survey</button>
-    <button class="btn btn-outline" onclick="coalesceFreqs()">Coalesce</button>
-    <button class="btn btn-outline" onclick="discoverTrunking()">Find P25</button>
-    <label style="color:var(--text2);font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="c-enabled-only" onchange="refreshCatalog()" /> Active only</label>
-  </div>
-  <div id="c-summary" class="card" style="margin-bottom:12px;display:flex;gap:24px;font-size:13px"></div>
-  <div class="card">
-    <table>
-      <thead><tr><th>MHz</th><th>Mode</th><th>Band/Label</th><th>Score</th><th>Observations</th><th>CTCSS</th><th>BW</th><th>First Seen</th><th></th></tr></thead>
-      <tbody id="c-table"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- RECORDINGS -->
-<div class="page" id="page-recordings">
-  <div class="search-bar">
-    <input type="text" id="r-search" placeholder="Search transcripts..." />
-    <button class="btn" onclick="searchRecordings()">Search</button>
-  </div>
-  <div class="card">
-    <table>
-      <thead><tr><th>Time</th><th>Frequency</th><th>Label</th><th>Duration</th><th>VAD</th><th>Transcript</th><th></th></tr></thead>
-      <tbody id="r-table"></tbody>
-    </table>
-    <div style="text-align:center;padding:12px">
-      <button class="btn btn-outline" onclick="loadMoreRecordings()">Load More</button>
-    </div>
+    <h3>Recent Activity</h3>
+    <div id="sc-activity"></div>
   </div>
 </div>
 
 <!-- SETTINGS -->
 <div class="page" id="page-settings">
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>SDR</h3>
-      <div class="form-group"><label>Device Index</label><input type="number" id="set-device" value="0" /></div>
-      <div class="form-group"><label>Gain (auto or 0-49)</label><input type="text" id="set-gain" value="auto" /></div>
-      <div class="form-group"><label>PPM Correction</label><input type="number" id="set-ppm" value="0" /></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="card"><h3>SDR</h3>
+      <div class="form-group"><label>Gain</label><input type="text" id="set-gain" value="auto"></div>
+      <div class="form-group"><label>PPM</label><input type="number" id="set-ppm" value="0"></div>
+      <div class="form-group"><label>Detection Threshold (dB)</label><input type="number" id="set-thresh" value="8" step="0.5"></div>
     </div>
-    <div class="card">
-      <h3>Survey</h3>
-      <div class="form-group"><label>Detection Threshold (dB above noise)</label><input type="number" id="set-threshold" value="8" step="0.5" /></div>
-      <div class="form-group"><label>Re-survey Interval (minutes)</label><input type="number" id="set-interval" value="60" /></div>
+    <div class="card"><h3>Recording</h3>
+      <div class="form-group"><label>Dwell Time (s)</label><input type="number" id="set-dwell" value="5" step="0.5"></div>
+      <div class="form-group"><label><input type="checkbox" id="set-vad" checked> VAD Enabled</label></div>
+      <div class="form-group"><label>VAD Threshold</label><input type="number" id="set-vad-t" value="0.5" step="0.05" min="0" max="1"></div>
     </div>
-    <div class="card">
-      <h3>Recording</h3>
-      <div class="form-group"><label>Dwell Time (seconds)</label><input type="number" id="set-dwell" value="5" step="0.5" /></div>
-      <div class="form-group"><label><input type="checkbox" id="set-vad" checked /> Enable VAD (voice activity detection)</label></div>
-      <div class="form-group"><label>VAD Threshold (0-1)</label><input type="number" id="set-vad-thresh" value="0.5" step="0.05" min="0" max="1" /></div>
+    <div class="card"><h3>Transcription</h3>
+      <div class="form-group"><label><input type="checkbox" id="set-tx" checked> Enable</label></div>
+      <div class="form-group"><label>Model</label><select id="set-model"><option value="tiny.en">tiny.en</option><option value="base.en">base.en</option></select></div>
     </div>
-    <div class="card">
-      <h3>Transcription</h3>
-      <div class="form-group"><label><input type="checkbox" id="set-transcribe" checked /> Enable Transcription</label></div>
-      <div class="form-group"><label>Whisper Model</label>
-        <select id="set-model">
-          <option value="tiny.en">tiny.en (~75MB RAM)</option>
-          <option value="base.en">base.en (~150MB RAM)</option>
-          <option value="small.en">small.en (~500MB RAM)</option>
-        </select>
-      </div>
+    <div class="card"><h3>Storage</h3>
+      <div class="form-group"><label>Retention (days)</label><input type="number" id="set-ret" value="30"></div>
+      <div class="form-group"><label>Max Storage (GB)</label><input type="number" id="set-max" value="32"></div>
     </div>
-    <div class="card">
-      <h3>Storage</h3>
-      <div class="form-group"><label>Retention (days)</label><input type="number" id="set-retention" value="30" /></div>
-      <div class="form-group"><label>Max Storage (GB)</label><input type="number" id="set-max-gb" value="32" /></div>
+  </div>
+  <div style="margin-top:12px;text-align:right"><button class="btn" onclick="saveSettings()">Save Settings</button></div>
+</div>
+
+<!-- ADD FAVORITE MODAL -->
+<div class="modal-bg" id="fav-modal">
+  <div class="modal">
+    <h3 id="fav-modal-title">Add Favorite</h3>
+    <div class="form-group"><label>Frequency (MHz)</label><input type="text" id="fm-freq"></div>
+    <div class="form-group"><label>Name</label><input type="text" id="fm-name" placeholder="e.g. Groton Fire Dispatch"></div>
+    <div class="form-group"><label>Category</label>
+      <select id="fm-cat">
+        <option value="police">Police</option><option value="fire">Fire</option>
+        <option value="ems">EMS</option><option value="marine">Marine</option>
+        <option value="weather">Weather</option><option value="utility">Utility</option>
+        <option value="ham">HAM</option><option value="other">Other</option>
+      </select>
     </div>
-    <div class="card" style="display:flex;align-items:end">
-      <button class="btn" onclick="saveSettings()" style="width:100%">Save Settings</button>
+    <div class="form-group"><label>Priority (0-10)</label><input type="number" id="fm-pri" value="5" min="0" max="10"></div>
+    <div class="form-group"><label>Alert Keywords (comma-separated)</label><input type="text" id="fm-kw" placeholder="fire, mayday, accident"></div>
+    <div class="form-group"><label>Notes</label><textarea id="fm-notes"></textarea></div>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeFavModal()">Cancel</button>
+      <button class="btn" onclick="saveFavorite()">Save</button>
     </div>
   </div>
 </div>
 
 <script>
-// --- State ---
-let currentPage = 'dashboard';
-let recordingOffset = 0;
-let allFreqs = [];
+// State
+let currentPage = 'channels';
+let channels = [];
+let favorites = [];
+let activeCat = 'all';
+let selectedChannel = null;
+let recOffset = 0;
 
-// --- Navigation ---
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-' + name).classList.add('active');
-  document.querySelectorAll('nav button').forEach(b => { if (b.textContent.toLowerCase() === name) b.classList.add('active'); });
-  currentPage = name;
-  refresh();
-}
+// Nav
+document.querySelectorAll('nav button[data-page]').forEach(b => {
+  b.addEventListener('click', () => {
+    currentPage = b.dataset.page;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + currentPage).classList.add('active');
+    document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    refresh();
+  });
+});
 
-// --- API helpers ---
+// API
 async function api(path, opts) {
-  try {
-    const r = await fetch('/api/' + path, opts);
-    if (!r.ok) throw new Error(r.status);
-    return await r.json();
-  } catch(e) { console.error('API error:', path, e); return null; }
+  try { const r = await fetch('/api/' + path, opts); if (!r.ok) throw r.status; return await r.json(); }
+  catch(e) { console.error('API', path, e); return null; }
 }
 
-// --- Dashboard ---
-async function refreshDashboard() {
-  const s = await api('status');
-  if (!s) return;
+// Helpers
+function timeAgo(ts) {
+  if (!ts) return '-';
+  const s = Math.floor(Date.now()/1000 - ts);
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  if (s < 86400) return Math.floor(s/3600) + 'h';
+  return Math.floor(s/86400) + 'd';
+}
+function catBadge(cat) {
+  return `<span class="cat-badge cat-badge-${cat||'other'}">${cat||'other'}</span>`;
+}
+function catClass(cat) { return 'cat-' + (cat || 'other'); }
+function guessCat(label) {
+  if (!label) return 'other';
+  const l = label.toLowerCase();
+  if (l.includes('fire') || l.includes('ems')) return 'fire';
+  if (l.includes('police') || l.includes('public safety')) return 'police';
+  if (l.includes('marine')) return 'marine';
+  if (l.includes('noaa') || l.includes('weather')) return 'weather';
+  if (l.includes('amateur') || l.includes('ham')) return 'ham';
+  return 'other';
+}
 
-  document.getElementById('statusDot').className = 'dot ' + (s.scanner_active ? 'on' : 'off');
-  document.getElementById('statusText').textContent = s.scanner_active ? 'scanning' : 'idle';
-  document.getElementById('d-freqs').textContent = s.total_frequencies;
-  document.getElementById('d-recs').textContent = s.total_recordings;
-  document.getElementById('d-trans').textContent = s.transcribed;
-  document.getElementById('d-active').textContent = s.active_last_hour;
-  document.getElementById('d-current-freq').textContent = s.current_freq_mhz ? s.current_freq_mhz.toFixed(4) : '---.----';
-  document.getElementById('s-current-freq').textContent = s.current_freq_mhz ? s.current_freq_mhz.toFixed(4) : '---.----';
-
-  if (s.storage) {
-    const st = s.storage;
-    document.getElementById('d-storage-used').textContent = (st.recordings_size_gb || 0).toFixed(2);
-    document.getElementById('d-storage-total').textContent = (st.primary_total_gb || 0).toFixed(1);
-    const pct = st.primary_pct || 0;
-    const bar = document.getElementById('d-storage-bar');
-    bar.style.width = pct + '%';
-    bar.className = 'progress-bar' + (pct > 90 ? ' danger' : pct > 70 ? ' warn' : '');
-    document.getElementById('d-overflow-info').textContent = st.overflow_mounted ? `Overflow: ${st.overflow_path} (${st.overflow_free_gb.toFixed(1)} GB free)` : 'No overflow storage mounted';
+// --- CHANNELS ---
+async function refreshChannels() {
+  const [chData, status] = await Promise.all([api('channels'), api('status')]);
+  if (chData) { channels = chData.channels; renderChannels(); }
+  if (status) {
+    document.getElementById('statusDot').className = 'dot ' + (status.scanner_active ? 'on' : status.current_freq_hz ? 'warn' : 'off');
+    document.getElementById('statusText').textContent = status.current_freq_mhz ? (status.current_freq_mhz).toFixed(4) + ' MHz' : 'idle';
+    document.getElementById('st-ch').textContent = chData ? chData.count : '--';
+    document.getElementById('st-rec').textContent = status.total_recordings;
+    document.getElementById('st-freq').textContent = status.current_freq_mhz ? status.current_freq_mhz.toFixed(4) : '---';
+    document.getElementById('sc-freq').textContent = status.current_freq_mhz ? status.current_freq_mhz.toFixed(4) : '---.----';
+    const mb = (status.storage?.recordings_size_gb || 0) * 1024;
+    document.getElementById('st-storage').textContent = mb > 1024 ? (mb/1024).toFixed(1) + ' GB' : mb.toFixed(0) + ' MB';
+    document.getElementById('st-storage-label').textContent = `of ${(status.storage?.primary_free_gb||0).toFixed(0)} GB free`;
   }
+}
 
-  const act = await api('activity?limit=15');
-  if (act && act.events) {
-    document.getElementById('d-activity').innerHTML = act.events.map(e => {
-      const t = new Date(e.timestamp * 1000);
-      const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-      return `<div class="activity-item"><span class="activity-time">${time}</span><span class="activity-type">${e.event_type}</span><span>${e.freq_hz ? (e.freq_hz/1e6).toFixed(4)+' MHz' : ''} ${e.detail||''}</span></div>`;
+function renderChannels() {
+  const search = (document.getElementById('ch-search')?.value || '').toLowerCase();
+  let filtered = channels.filter(ch => {
+    const cat = ch.fav_category || guessCat(ch.label);
+    if (activeCat !== 'all' && cat !== activeCat) return false;
+    if (search) {
+      const text = `${(ch.freq_hz/1e6).toFixed(4)} ${ch.fav_name||''} ${ch.label||''}`.toLowerCase();
+      if (!text.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const list = document.getElementById('ch-list');
+  if (!filtered.length) { list.innerHTML = '<div style="color:var(--text2);padding:20px;text-align:center">No channels match filter</div>'; return; }
+
+  list.innerHTML = filtered.map(ch => {
+    const cat = ch.fav_category || guessCat(ch.label);
+    const name = ch.fav_name || ch.label || 'Unknown';
+    const isFav = !!ch.fav_id;
+    return `<div class="ch-row ${catClass(cat)}" onclick="selectChannel(${ch.id})" data-id="${ch.id}">
+      <button class="btn-fav ${isFav?'active':''}" onclick="event.stopPropagation();quickFav(${ch.id},${ch.freq_hz},'${name.replace(/'/g,"\\'")}','${cat}')" title="${isFav?'Favorited':'Add to favorites'}">${isFav?'&#9733;':'&#9734;'}</button>
+      <span class="freq">${(ch.freq_hz/1e6).toFixed(4)}</span>
+      <span class="name">${catBadge(cat)} ${name}</span>
+      <span class="count">${ch.recording_count} rec</span>
+      <span class="time">${ch.total_duration_s ? Math.round(ch.total_duration_s)+'s' : '-'}</span>
+      <span class="time">${timeAgo(ch.last_recording)}</span>
+      <span>${ch.activity_score > 0.5 ? '<span class="dot on"></span>' : ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function filterCat(el) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  activeCat = el.dataset.cat;
+  renderChannels();
+}
+
+async function selectChannel(freqId) {
+  selectedChannel = freqId;
+  document.querySelectorAll('.ch-row').forEach(r => r.classList.toggle('active', r.dataset.id == freqId));
+  const data = await api(`channels/${freqId}/recordings?limit=30`);
+  if (!data) return;
+  const ch = channels.find(c => c.id === freqId);
+  const detail = document.getElementById('ch-detail');
+  detail.style.display = 'block';
+  const cat = ch?.fav_category || guessCat(ch?.label);
+  detail.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <h2>${ch?.fav_name || ch?.label || 'Channel'}</h2>
+        <div class="meta">${(ch?.freq_hz/1e6).toFixed(4)} MHz ${catBadge(cat)} ${ch?.mode ? '&middot; ' + ch.mode : ''} &middot; ${ch?.recording_count || 0} recordings</div>
+      </div>
+      <div>
+        <button class="btn btn-sm" onclick="showAddFavModal(${ch?.freq_hz},'${(ch?.fav_name||ch?.label||'').replace(/'/g,"\\'")}','${cat}')">
+          ${ch?.fav_id ? 'Edit Favorite' : '+ Favorite'}
+        </button>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      ${data.recordings.length ? data.recordings.map(r => `
+        <div class="rec-row">
+          <span>${new Date(r.recorded_at*1000).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
+          <span>${r.duration_s?.toFixed(1) || '-'}s</span>
+          <span class="rec-transcript">${r.transcript || '<span style="color:var(--text2)">no transcript</span>'}</span>
+          <audio controls preload="none" src="/api/recordings/${r.id}/audio"></audio>
+        </div>
+      `).join('') : '<div style="color:var(--text2);padding:12px">No recordings yet</div>'}
+    </div>
+  `;
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function quickFav(freqId, freqHz, name, cat) {
+  const ch = channels.find(c => c.id === freqId);
+  if (ch?.fav_id) return; // already favorited
+  await api('favorites', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ freq_hz: freqHz, name: name, category: cat, priority: 5 }) });
+  refreshChannels();
+}
+
+// --- FAVORITES ---
+async function refreshFavorites() {
+  const data = await api('favorites');
+  if (data) { favorites = data.favorites; renderFavorites(); }
+}
+
+function renderFavorites() {
+  const search = (document.getElementById('fav-search')?.value || '').toLowerCase();
+  const filtered = favorites.filter(f => {
+    if (search) return `${f.name} ${(f.freq_hz/1e6).toFixed(4)}`.toLowerCase().includes(search);
+    return true;
+  });
+  const list = document.getElementById('fav-list');
+  if (!filtered.length) { list.innerHTML = '<div style="color:var(--text2);padding:20px;text-align:center">No favorites yet. Star a channel or click "+ Add Favorite"</div>'; return; }
+  list.innerHTML = filtered.map(f => `
+    <div class="ch-row ${catClass(f.category)}" onclick="selectFavChannel(${f.freq_id})" style="grid-template-columns: 30px 110px 1fr 80px 80px 60px 30px">
+      <span class="btn-fav active">&#9733;</span>
+      <span class="freq">${(f.freq_hz/1e6).toFixed(4)}</span>
+      <span class="name">${catBadge(f.category)} ${f.name}</span>
+      <span class="count">${f.recording_count||0} rec</span>
+      <span class="time">${timeAgo(f.last_seen)}</span>
+      <span>${f.priority > 0 ? 'P'+f.priority : ''}</span>
+      <button class="btn-xs btn-outline" onclick="event.stopPropagation();deleteFav(${f.id})" title="Remove">x</button>
+    </div>
+  `).join('');
+}
+
+async function selectFavChannel(freqId) {
+  await selectChannel(freqId);
+  const detail = document.getElementById('ch-detail');
+  document.getElementById('fav-detail').innerHTML = detail.innerHTML;
+  document.getElementById('fav-detail').style.display = 'block';
+}
+
+function showAddFavModal(freqHz, name, cat) {
+  document.getElementById('fm-freq').value = freqHz ? (freqHz/1e6).toFixed(4) : '';
+  document.getElementById('fm-name').value = name || '';
+  document.getElementById('fm-cat').value = cat || 'other';
+  document.getElementById('fm-pri').value = 5;
+  document.getElementById('fm-kw').value = '';
+  document.getElementById('fm-notes').value = '';
+  document.getElementById('fav-modal').classList.add('show');
+}
+function closeFavModal() { document.getElementById('fav-modal').classList.remove('show'); }
+
+async function saveFavorite() {
+  const freqMhz = parseFloat(document.getElementById('fm-freq').value);
+  const name = document.getElementById('fm-name').value.trim();
+  if (!freqMhz || !name) { alert('Frequency and name required'); return; }
+  await api('favorites', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+    freq_hz: Math.round(freqMhz * 1e6), name,
+    category: document.getElementById('fm-cat').value,
+    priority: parseInt(document.getElementById('fm-pri').value) || 0,
+    alert_keywords: document.getElementById('fm-kw').value,
+    notes: document.getElementById('fm-notes').value,
+  })});
+  closeFavModal();
+  refreshFavorites();
+  refreshChannels();
+}
+
+async function deleteFav(id) {
+  if (!confirm('Remove from favorites?')) return;
+  await api(`favorites/${id}`, { method:'DELETE' });
+  refreshFavorites();
+  refreshChannels();
+}
+
+// --- RECORDINGS ---
+async function refreshRecordings() { recOffset = 0; loadRecs(); }
+async function searchRecs() { recOffset = 0; loadRecs(); }
+async function loadRecs(append) {
+  const search = document.getElementById('rec-search')?.value || '';
+  const data = await api(`recordings?limit=50&offset=${recOffset}${search?'&search='+encodeURIComponent(search):''}`);
+  if (!data) return;
+  const html = data.recordings.map(r => `
+    <div class="rec-row" style="grid-template-columns:140px 100px 50px 1fr 200px">
+      <span>${new Date(r.recorded_at*1000).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="freq" style="font-size:12px">${r.freq_mhz ? r.freq_mhz.toFixed(4) : (r.freq_hz/1e6).toFixed(4)}</span>
+      <span>${r.duration_s?.toFixed(1)||'-'}s</span>
+      <span class="rec-transcript">${r.transcript || (r.label || r.mode || '')}</span>
+      <audio controls preload="none" src="/api/recordings/${r.id}/audio"></audio>
+    </div>
+  `).join('');
+  document.getElementById('rec-list').innerHTML = append ? document.getElementById('rec-list').innerHTML + html : html;
+}
+function loadMoreRecs() { recOffset += 50; loadRecs(true); }
+
+// --- SCANNER ---
+async function refreshScanner() {
+  const data = await api('activity?limit=20');
+  if (data) {
+    document.getElementById('sc-activity').innerHTML = data.events.map(e => {
+      const t = new Date(e.timestamp*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      return `<div style="display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text2);min-width:70px;font-family:monospace">${t}</span>
+        <span style="min-width:100px">${e.event_type}</span>
+        <span>${e.freq_hz?(e.freq_hz/1e6).toFixed(4)+' MHz':''}</span>
+      </div>`;
     }).join('');
   }
 }
 
-// --- Scanner ---
-async function refreshScanner() {
-  const data = await api('frequencies?enabled=true');
-  if (!data) return;
-  const tbody = document.getElementById('s-freq-table');
-  tbody.innerHTML = data.frequencies.slice(0, 20).map(f => `
-    <tr>
-      <td class="mono">${(f.freq_hz/1e6).toFixed(4)}</td>
-      <td>${modeBadge(f.mode)}</td>
-      <td>${f.label || ''}</td>
-      <td>${(f.activity_score||0).toFixed(2)}</td>
-      <td>${timeAgo(f.last_seen)}</td>
-      <td><button class="btn btn-sm" onclick="manualTuneHz(${f.freq_hz})">Tune</button></td>
-    </tr>
-  `).join('');
-}
-
 async function manualTune() {
-  const mhz = parseFloat(document.getElementById('s-manual-freq').value);
+  const mhz = parseFloat(document.getElementById('sc-tune').value);
   if (isNaN(mhz)) return;
-  await api('scanner/scan-now', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({freq_hz: Math.round(mhz * 1e6)}) });
+  await api('scanner/scan-now', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({freq_hz:Math.round(mhz*1e6)}) });
 }
-async function manualTuneHz(hz) {
-  await api('scanner/scan-now', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({freq_hz: hz}) });
-}
-
-// --- Catalog ---
-async function refreshCatalog() {
-  const mode = document.getElementById('c-filter-mode').value;
-  const enabledOnly = document.getElementById('c-enabled-only').checked;
-  let url = 'frequencies?';
-  if (mode) url += 'mode=' + mode + '&';
-  if (enabledOnly) url += 'enabled=true&';
-  const data = await api(url);
-  if (!data) return;
-  allFreqs = data.frequencies;
-  filterCatalog();
-  // Band summary
-  const bands = {};
-  data.frequencies.forEach(f => { const l = f.label || 'Unknown'; bands[l] = (bands[l]||0) + 1; });
-  document.getElementById('c-summary').innerHTML = Object.entries(bands)
-    .sort((a,b) => b[1]-a[1]).slice(0,8)
-    .map(([k,v]) => `<span><strong>${v}</strong> ${k}</span>`).join('');
-}
-
-function filterCatalog() {
-  const search = document.getElementById('c-search').value.toLowerCase();
-  const filtered = allFreqs.filter(f => {
-    const text = `${(f.freq_hz/1e6).toFixed(4)} ${f.label||''} ${f.fcc_licensee||''} ${f.mode||''}`.toLowerCase();
-    return text.includes(search);
-  });
-  renderCatalog(filtered);
-}
-
+async function triggerSurvey() { await api('survey/run', {method:'POST'}); }
 async function coalesceFreqs() {
-  const r = await api('frequencies/coalesce', { method: 'POST' });
-  if (r) { alert(`Coalesced to ${r.channels} channels`); refreshCatalog(); }
-}
-async function discoverTrunking() {
-  const r = await api('trunking/discover', { method: 'POST' });
-  if (r) alert(`Found ${r.count} P25 control channels`);
+  const r = await api('frequencies/coalesce', {method:'POST'});
+  if (r) alert(`Coalesced to ${r.channels} channels`);
+  refreshChannels();
 }
 
-function renderCatalog(freqs) {
-  document.getElementById('c-table').innerHTML = freqs.map(f => `
-    <tr>
-      <td class="mono">${(f.freq_hz/1e6).toFixed(4)}</td>
-      <td>${modeBadge(f.mode)}</td>
-      <td><input type="text" value="${f.label||''}" onchange="setLabel(${f.freq_hz}, this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;width:120px" /></td>
-      <td>${(f.activity_score||0).toFixed(2)}</td>
-      <td>${f.observation_count||0}</td>
-      <td class="mono">${f.ctcss_tone ? f.ctcss_tone.toFixed(1) : '-'}</td>
-      <td class="mono">${f.bandwidth_hz ? (f.bandwidth_hz/1000).toFixed(1)+'k' : '-'}</td>
-      <td>${timeAgo(f.first_seen)}</td>
-      <td>
-        <button class="btn btn-sm ${f.enabled?'':'btn-outline'}" onclick="toggleFreq(${f.freq_hz})">${f.enabled?'ON':'OFF'}</button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function setLabel(freqHz, label) {
-  await api(`frequencies/${freqHz}/label`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({label}) });
-}
-async function toggleFreq(freqHz) {
-  await api(`frequencies/${freqHz}/toggle`, { method:'POST' });
-  refreshCatalog();
-}
-async function triggerSurvey() {
-  await api('survey/run', { method:'POST' });
-}
-
-// --- Recordings ---
-async function refreshRecordings() {
-  recordingOffset = 0;
-  await loadRecordings();
-}
-
-async function loadRecordings(append) {
-  const search = document.getElementById('r-search').value;
-  const url = `recordings?limit=50&offset=${recordingOffset}` + (search ? `&search=${encodeURIComponent(search)}` : '');
-  const data = await api(url);
-  if (!data) return;
-  const html = data.recordings.map(r => `
-    <tr>
-      <td>${new Date(r.recorded_at*1000).toLocaleString()}</td>
-      <td class="mono">${r.freq_mhz ? r.freq_mhz.toFixed(4) : (r.freq_hz/1e6).toFixed(4)}</td>
-      <td>${r.label || r.mode || ''}</td>
-      <td>${r.duration_s ? r.duration_s.toFixed(1)+'s' : '-'}</td>
-      <td>${r.vad_confidence ? r.vad_confidence.toFixed(2) : '-'}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${r.transcript || '<span style="color:var(--text2)">—</span>'} ${!r.transcribed ? '<button class="btn btn-sm btn-outline" onclick="transcribeRec('+r.id+')">Transcribe</button>' : ''}</td>
-      <td><audio controls preload="none" src="/api/recordings/${r.id}/audio" style="height:28px;width:150px"></audio></td>
-    </tr>
-  `).join('');
-  const tbody = document.getElementById('r-table');
-  if (append) tbody.innerHTML += html;
-  else tbody.innerHTML = html;
-}
-
-function searchRecordings() { recordingOffset = 0; loadRecordings(); }
-function loadMoreRecordings() { recordingOffset += 50; loadRecordings(true); }
-async function transcribeRec(id) {
-  const r = await api(`recordings/${id}/transcribe`, { method:'POST' });
-  if (r && r.transcript) refreshRecordings();
-}
-
-// --- Settings ---
+// --- SETTINGS ---
 async function refreshSettings() {
-  const s = await api('settings');
-  if (!s) return;
-  document.getElementById('set-device').value = s.sdr_device;
+  const s = await api('settings'); if (!s) return;
   document.getElementById('set-gain').value = s.sdr_gain;
   document.getElementById('set-ppm').value = s.sdr_ppm;
-  document.getElementById('set-threshold').value = s.detection_threshold_db;
-  document.getElementById('set-interval').value = s.survey_interval_min;
+  document.getElementById('set-thresh').value = s.detection_threshold_db;
   document.getElementById('set-dwell').value = s.dwell_time_s;
   document.getElementById('set-vad').checked = s.vad_enabled;
-  document.getElementById('set-vad-thresh').value = s.vad_threshold;
-  document.getElementById('set-transcribe').checked = s.transcribe_enabled;
+  document.getElementById('set-vad-t').value = s.vad_threshold;
+  document.getElementById('set-tx').checked = s.transcribe_enabled;
   document.getElementById('set-model').value = s.transcribe_model;
-  document.getElementById('set-retention').value = s.retention_days;
-  document.getElementById('set-max-gb').value = s.max_storage_gb;
+  document.getElementById('set-ret').value = s.retention_days;
+  document.getElementById('set-max').value = s.max_storage_gb;
 }
 async function saveSettings() {
   await api('settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
     sdr_gain: document.getElementById('set-gain').value,
     sdr_ppm: parseInt(document.getElementById('set-ppm').value),
-    detection_threshold_db: parseFloat(document.getElementById('set-threshold').value),
+    detection_threshold_db: parseFloat(document.getElementById('set-thresh').value),
     dwell_time_s: parseFloat(document.getElementById('set-dwell').value),
     vad_enabled: document.getElementById('set-vad').checked,
-    vad_threshold: parseFloat(document.getElementById('set-vad-thresh').value),
-    transcribe_enabled: document.getElementById('set-transcribe').checked,
-    retention_days: parseInt(document.getElementById('set-retention').value),
-    max_storage_gb: parseFloat(document.getElementById('set-max-gb').value),
+    vad_threshold: parseFloat(document.getElementById('set-vad-t').value),
+    transcribe_enabled: document.getElementById('set-tx').checked,
+    retention_days: parseInt(document.getElementById('set-ret').value),
+    max_storage_gb: parseFloat(document.getElementById('set-max').value),
   })});
   alert('Settings saved');
 }
 
-// --- Helpers ---
-function modeBadge(mode) {
-  const cls = {'analog_fm':'fm','p25':'p25','dmr':'dmr','nxdn':'nxdn'}[mode] || 'unknown';
-  return `<span class="badge badge-${cls}">${mode || 'unknown'}</span>`;
-}
-function timeAgo(ts) {
-  if (!ts) return '-';
-  const s = Math.floor(Date.now()/1000 - ts);
-  if (s < 60) return s + 's ago';
-  if (s < 3600) return Math.floor(s/60) + 'm ago';
-  if (s < 86400) return Math.floor(s/3600) + 'h ago';
-  return Math.floor(s/86400) + 'd ago';
-}
-
-// --- Refresh loop ---
+// --- REFRESH ---
 function refresh() {
-  if (currentPage === 'dashboard') refreshDashboard();
-  else if (currentPage === 'scanner') { refreshDashboard(); refreshScanner(); }
-  else if (currentPage === 'catalog') refreshCatalog();
+  if (currentPage === 'channels') refreshChannels();
+  else if (currentPage === 'favorites') refreshFavorites();
   else if (currentPage === 'recordings') refreshRecordings();
+  else if (currentPage === 'scanner') { refreshChannels(); refreshScanner(); }
   else if (currentPage === 'settings') refreshSettings();
 }
 
 refresh();
-setInterval(() => { if (currentPage === 'dashboard' || currentPage === 'scanner') refresh(); }, 5000);
+setInterval(() => { if (currentPage === 'channels' || currentPage === 'scanner') refreshChannels(); }, 5000);
 </script>
 </body>
 </html>

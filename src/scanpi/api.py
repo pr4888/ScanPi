@@ -109,6 +109,55 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
             raise HTTPException(404, "Audio file not found")
         return FileResponse(str(filepath), media_type="audio/wav")
 
+    # --- Favorites ---
+
+    @app.get("/api/favorites")
+    async def list_favorites(category: str | None = None):
+        favs = db.get_favorites(category=category)
+        return {"favorites": favs, "count": len(favs)}
+
+    @app.post("/api/favorites")
+    async def add_favorite(request: Request):
+        body = await request.json()
+        freq_hz = body.get("freq_hz")
+        name = body.get("name", "")
+        if not freq_hz or not name:
+            raise HTTPException(400, "freq_hz and name required")
+        fav_id = db.add_favorite(
+            freq_hz=freq_hz,
+            name=name,
+            category=body.get("category", "other"),
+            color=body.get("color"),
+            priority=body.get("priority", 0),
+            alert_keywords=body.get("alert_keywords", ""),
+            notes=body.get("notes", ""),
+        )
+        return {"id": fav_id, "ok": True}
+
+    @app.put("/api/favorites/{fav_id}")
+    async def update_favorite(fav_id: int, request: Request):
+        body = await request.json()
+        db.update_favorite(fav_id, **body)
+        return {"ok": True}
+
+    @app.delete("/api/favorites/{fav_id}")
+    async def delete_favorite(fav_id: int):
+        db.delete_favorite(fav_id)
+        return {"ok": True}
+
+    # --- Channels (summary view) ---
+
+    @app.get("/api/channels")
+    async def list_channels():
+        """Active channels with recording counts — the main useful view."""
+        channels = db.get_channel_summary()
+        return {"channels": channels, "count": len(channels)}
+
+    @app.get("/api/channels/{freq_id}/recordings")
+    async def channel_recordings(freq_id: int, limit: int = 50):
+        recs = db.get_recordings(freq_id=freq_id, limit=limit)
+        return {"recordings": recs, "count": len(recs)}
+
     @app.post("/api/recordings/{rec_id}/transcribe")
     async def transcribe_recording(rec_id: int):
         """On-demand transcription of a specific recording."""

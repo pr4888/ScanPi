@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS survey_snapshots (
     noise_floor_db REAL
 );
 
+CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    freq_id INTEGER REFERENCES frequencies(id),
+    freq_hz INTEGER NOT NULL,
+    name TEXT NOT NULL,              -- user-given name like "Groton Fire Dispatch"
+    category TEXT DEFAULT 'other',   -- 'police', 'fire', 'ems', 'marine', 'weather', 'utility', 'ham', 'other'
+    color TEXT,                      -- hex color for UI
+    priority INTEGER DEFAULT 0,     -- higher = scanned more often
+    listen_enabled BOOLEAN DEFAULT 1,
+    alert_keywords TEXT,             -- comma-separated keywords that trigger alerts
+    created_at REAL NOT NULL,
+    notes TEXT
+);
+
 CREATE TABLE IF NOT EXISTS noise_floor (
     freq_hz INTEGER PRIMARY KEY,
     avg_power_db REAL NOT NULL,
@@ -202,6 +216,79 @@ class ScanPiDB:
             c.execute("SELECT avg_power_db FROM noise_floor WHERE freq_hz = ?", (freq_hz,))
             row = c.fetchone()
             return row[0] if row else None
+
+    # --- Favorites ---
+
+    def add_favorite(self, freq_hz: int, name: str, category: str = "other",
+                     color: str | None = None, priority: int = 0,
+                     alert_keywords: str = "", notes: str = "") -> int:
+        now = time.time()
+        # Get or create freq entry
+        freq_id = self.upsert_frequency(freq_hz, -50)
+        with self.cursor() as c:
+            c.execute("""
+                INSERT INTO favorites (freq_id, freq_hz, name, category, color,
+                                       priority, alert_keywords, created_at, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (freq_id, freq_hz, name, category, color,
+                  priority, alert_keywords, now, notes))
+            # Boost activity score for favorites
+            c.execute("UPDATE frequencies SET activity_score = MAX(activity_score, 0.9), enabled = 1 WHERE freq_hz = ?",
+                      (freq_hz,))
+            return c.lastrowid
+
+    def get_favorites(self, category: str | None = None) -> list[dict]:
+        q = """SELECT fav.*, f.freq_mhz, f.mode, f.avg_power_db, f.last_seen,
+                      f.observation_count, f.activity_score,
+                      (SELECT COUNT(*) FROM recordings r WHERE r.freq_id = fav.freq_id) as recording_count,
+                      (SELECT r.filepath FROM recordings r WHERE r.freq_id = fav.freq_id ORDER BY r.recorded_at DESC LIMIT 1) as latest_recording,
+                      (SELECT r.transcript FROM recordings r WHERE r.freq_id = fav.freq_id AND r.transcript IS NOT NULL ORDER BY r.recorded_at DESC LIMIT 1) as latest_transcript
+               FROM favorites fav
+               LEFT JOIN frequencies f ON fav.freq_id = f.id
+               WHERE 1=1"""
+        params = []
+        if category:
+            q += " AND fav.category = ?"
+            params.append(category)
+        q += " ORDER BY fav.priority DESC, fav.name"
+        with self.cursor() as c:
+            c.execute(q, params)
+            return [dict(r) for r in c.fetchall()]
+
+    def update_favorite(self, fav_id: int, **kwargs):
+        allowed = {"name", "category", "color", "priority", "listen_enabled", "alert_keywords", "notes"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        with self.cursor() as c:
+            c.execute(f"UPDATE favorites SET {set_clause} WHERE id = ?",
+                      (*updates.values(), fav_id))
+
+    def delete_favorite(self, fav_id: int):
+        with self.cursor() as c:
+            c.execute("DELETE FROM favorites WHERE id = ?", (fav_id,))
+
+    def get_channel_summary(self) -> list[dict]:
+        """Get per-frequency summary with recording counts and latest activity."""
+        with self.cursor() as c:
+            c.execute("""
+                SELECT f.id, f.freq_hz, f.freq_mhz, f.mode, f.label, f.activity_score,
+                       f.last_seen, f.observation_count, f.enabled,
+                       COUNT(r.id) as recording_count,
+                       MAX(r.recorded_at) as last_recording,
+                       SUM(r.duration_s) as total_duration_s,
+                       fav.id as fav_id, fav.name as fav_name, fav.category as fav_category,
+                       fav.color as fav_color, fav.priority as fav_priority
+                FROM frequencies f
+                LEFT JOIN recordings r ON r.freq_id = f.id
+                LEFT JOIN favorites fav ON fav.freq_id = f.id
+                WHERE f.enabled = 1
+                GROUP BY f.id
+                HAVING recording_count > 0 OR fav.id IS NOT NULL
+                ORDER BY fav.priority DESC NULLS LAST, recording_count DESC, f.activity_score DESC
+            """)
+            return [dict(r) for r in c.fetchall()]
 
     # --- Recordings ---
 
