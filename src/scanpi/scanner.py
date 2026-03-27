@@ -62,10 +62,13 @@ class Scanner:
         cmd = self._build_rtl_cmd(freq_hz, mode)
 
         try:
+            import os
+            env = {**os.environ, "LD_LIBRARY_PATH": "/usr/local/lib:" + os.environ.get("LD_LIBRARY_PATH", "")}
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
+                env=env,
             )
             self._process = proc
 
@@ -89,13 +92,15 @@ class Scanner:
             proc.kill()
             await proc.wait()
             self._process = None
+            await asyncio.sleep(0.3)  # let SDR USB settle between tunes
 
         except FileNotFoundError:
             log.error("rtl_fm not found")
             self._running = False
             return
         except Exception as e:
-            log.error(f"Scanner error on {freq_hz}: {e}")
+            log.error(f"Scanner error on {freq_hz}: {type(e).__name__}: {e}")
+            await asyncio.sleep(0.5)  # let SDR settle after error
             return
 
         if not audio_chunks:

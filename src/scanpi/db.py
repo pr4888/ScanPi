@@ -307,7 +307,11 @@ class ScanPiDB:
     def get_recordings(self, freq_id: int | None = None,
                        limit: int = 50, offset: int = 0,
                        search: str | None = None) -> list[dict]:
-        q = "SELECT r.*, f.label, f.mode, f.freq_mhz FROM recordings r LEFT JOIN frequencies f ON r.freq_id = f.id WHERE 1=1"
+        q = """SELECT r.id, r.freq_id, r.freq_hz, r.filepath, r.recorded_at,
+                      r.duration_s, r.size_bytes, r.vad_confidence, r.energy_db,
+                      r.transcribed, r.transcript, r.transcript_confidence, r.keywords,
+                      f.label, f.mode, f.freq_mhz
+               FROM recordings r LEFT JOIN frequencies f ON r.freq_id = f.id WHERE 1=1"""
         params = []
         if freq_id is not None:
             q += " AND r.freq_id = ?"
@@ -319,7 +323,15 @@ class ScanPiDB:
         params.extend([limit, offset])
         with self.cursor() as c:
             c.execute(q, params)
-            return [dict(r) for r in c.fetchall()]
+            rows = []
+            for r in c.fetchall():
+                d = dict(r)
+                # Ensure all values are JSON-serializable (no bytes)
+                for k, v in d.items():
+                    if isinstance(v, bytes):
+                        d[k] = v.decode("utf-8", errors="replace")
+                rows.append(d)
+            return rows
 
     def set_transcript(self, recording_id: int, transcript: str,
                        confidence: float, keywords: str = ""):

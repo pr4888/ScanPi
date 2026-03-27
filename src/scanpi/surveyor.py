@@ -51,10 +51,13 @@ class Surveyor:
         log.info(f"Surveying {band.name}: {band.start_mhz}-{band.end_mhz} MHz")
 
         try:
+            import os
+            env = {**os.environ, "LD_LIBRARY_PATH": "/usr/local/lib:" + os.environ.get("LD_LIBRARY_PATH", "")}
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
         except asyncio.TimeoutError:
