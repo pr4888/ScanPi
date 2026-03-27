@@ -185,7 +185,7 @@ class ScanPiApp:
         log.info("ScanPi stopped")
 
 
-def run(config_path=None):
+def run(config_path=None, host: str | None = None, port: int | None = None):
     """Entry point."""
     logging.basicConfig(
         level=logging.INFO,
@@ -194,6 +194,11 @@ def run(config_path=None):
     )
 
     cfg = ScanConfig.load(config_path)
+    # CLI overrides
+    if host:
+        cfg.host = host
+    if port:
+        cfg.port = port
     app = ScanPiApp(cfg)
 
     try:

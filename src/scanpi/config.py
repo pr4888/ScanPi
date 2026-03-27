@@ -67,7 +67,8 @@ class ScanConfig:
     max_storage_gb: float = 32.0
     auto_mount_usb: bool = True
 
-    # Web
+    # Web — default 0.0.0.0:8080 (accessible on LAN)
+    # Set to "127.0.0.1" for localhost-only, or a specific IP for static binding
     host: str = "0.0.0.0"
     port: int = 8080
 
@@ -127,6 +128,9 @@ class ScanConfig:
             f'auto_mount_usb = {str(self.auto_mount_usb).lower()}',
             "",
             "[web]",
+            '# "0.0.0.0" = all interfaces (LAN accessible)',
+            '# "127.0.0.1" = localhost only',
+            '# Or a specific IP like "192.168.1.100"',
             f'host = "{self.host}"',
             f'port = {self.port}',
             "",

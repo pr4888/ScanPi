@@ -17,6 +17,11 @@ def main():
         help="Path to config.toml (default: ~/scanpi/config.toml)",
     )
     parser.add_argument(
+        "-H", "--host",
+        type=str,
+        help="Web UI bind address (default: 0.0.0.0 = all interfaces)",
+    )
+    parser.add_argument(
         "-p", "--port",
         type=int,
         help="Web UI port (default: 8080)",
@@ -40,6 +45,7 @@ def main():
         cfg.save()
         print(f"Config written to: {cfg.data_dir / 'config.toml'}")
         print(f"Data directory: {cfg.data_dir}")
+        print(f"Web UI: http://localhost:{cfg.port}")
         print("Edit config.toml then run: scanpi")
         return
 
@@ -63,7 +69,7 @@ def main():
         return
 
     from .app import run
-    run(args.config)
+    run(args.config, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
