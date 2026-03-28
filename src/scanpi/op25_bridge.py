@@ -135,10 +135,14 @@ class OP25Bridge:
         # Start UDP audio receiver in a thread
         self._start_audio_receiver()
 
-        # Run log tailer and call finalizer concurrently
+        # Load transcription model
+        self._init_transcriber()
+
+        # Run log tailer, call finalizer, and transcription loop concurrently
         await asyncio.gather(
             self._tail_log(),
             self._finalize_loop(),
+            self._transcribe_loop(),
         )
 
     def _ensure_calls_table(self):
@@ -439,6 +443,112 @@ class OP25Bridge:
             })
         result.sort(key=lambda r: -r["start_time"])
         return result
+
+    # --- Transcription ---
+
+    def _init_transcriber(self):
+        """Load faster-whisper model."""
+        self._whisper = None
+        try:
+            from faster_whisper import WhisperModel
+            self._whisper = WhisperModel(
+                "tiny.en", device="cpu", compute_type="int8", cpu_threads=2,
+            )
+            log.info("Whisper tiny.en model loaded for transcription")
+        except ImportError:
+            log.warning("faster-whisper not installed — no transcription")
+        except Exception as e:
+            log.error(f"Whisper init failed: {e}")
+
+    async def _transcribe_loop(self):
+        """Background loop — transcribe calls that have audio but no transcript."""
+        if not self._whisper:
+            return
+        while self._running:
+            await asyncio.sleep(10)  # check every 10s
+            try:
+                await self._transcribe_pending()
+            except Exception as e:
+                log.error(f"Transcription error: {e}")
+
+    async def _transcribe_pending(self):
+        """Find and transcribe untranscribed calls."""
+        with self.db.cursor() as c:
+            c.execute("""
+                SELECT id, filepath, tg_name, tgid FROM calls
+                WHERE transcribed = 0 AND filepath IS NOT NULL
+                ORDER BY start_time DESC LIMIT 5
+            """)
+            pending = [dict(r) for r in c.fetchall()]
+
+        if not pending:
+            return
+
+        loop = asyncio.get_event_loop()
+        for call in pending:
+            fp = call["filepath"]
+            # Prefer the upsampled version
+            up = fp.replace(".wav", ".48k.wav") if fp.endswith(".wav") else fp
+            audio_file = up if Path(up).exists() else fp
+            if not Path(audio_file).exists():
+                continue
+
+            # Run transcription in thread pool (CPU-intensive)
+            text, confidence, keywords = await loop.run_in_executor(
+                None, self._transcribe_file, audio_file
+            )
+            if text:
+                with self.db.cursor() as c:
+                    c.execute("""
+                        UPDATE calls SET transcribed = 1, transcript = ?,
+                               transcript_confidence = ?, keywords = ?
+                        WHERE id = ?
+                    """, (text, confidence, keywords, call["id"]))
+                log.info(f"Transcribed call #{call['id']} ({call['tg_name']}): {text[:60]}...")
+
+    def _transcribe_file(self, filepath: str) -> tuple[str, float, str]:
+        """Transcribe a single file. Returns (text, confidence, keywords)."""
+        import re
+        try:
+            segments, info = self._whisper.transcribe(
+                filepath, language="en", beam_size=1, vad_filter=True,
+            )
+            texts = []
+            total_prob = 0
+            count = 0
+            for seg in segments:
+                t = seg.text.strip()
+                if t:
+                    texts.append(t)
+                    total_prob += getattr(seg, 'avg_log_prob', getattr(seg, 'avg_logprob', -0.5))
+                    count += 1
+
+            if not texts:
+                return "", 0, ""
+
+            text = " ".join(texts)
+            # Clean hallucinations
+            for pattern in [r"thank you for watching", r"thanks for watching",
+                            r"please subscribe", r"\[music\]"]:
+                text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s+", " ", text).strip()
+
+            if len(text) < 3:
+                return "", 0, ""
+
+            confidence = min(1.0, max(0.0, 1.0 + (total_prob / count if count else -1)))
+
+            # Extract alert keywords
+            alert_words = ["mayday", "emergency", "fire", "accident", "rescue",
+                           "shots", "shooting", "officer", "pursuit", "ambulance"]
+            found = [w for w in alert_words if w.lower() in text.lower()]
+            keywords = ",".join(found)
+
+            return text, confidence, keywords
+
+        except Exception as e:
+            log.error(f"Transcribe error on {filepath}: {e}")
+            return "", 0, ""
 
     def stop(self):
         self._running = False
