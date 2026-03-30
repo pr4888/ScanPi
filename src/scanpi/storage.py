@@ -173,8 +173,39 @@ class StorageManager:
 
         return False
 
+    def enforce_calls_retention(self):
+        """Delete calls older than retention period, including WAV and upsampled files."""
+        cutoff = time.time() - (self.cfg.retention_days * 86400)
+        try:
+            with self.db.cursor() as c:
+                c.execute("SELECT id, filepath FROM calls WHERE start_time < ?", (cutoff,))
+                old_calls = c.fetchall()
+        except Exception:
+            # calls table may not exist yet
+            return
+
+        deleted = 0
+        for row in old_calls:
+            filepath = row[1] if len(row) > 1 else None
+            if filepath:
+                wav = Path(filepath)
+                upsampled = wav.with_suffix(".48k.wav") if wav.suffix == ".wav" else None
+                if wav.exists():
+                    wav.unlink()
+                    deleted += 1
+                if upsampled and upsampled.exists():
+                    upsampled.unlink()
+
+        if old_calls:
+            with self.db.cursor() as c:
+                c.execute("DELETE FROM calls WHERE start_time < ?", (cutoff,))
+
+        if deleted > 0:
+            log.info(f"Calls retention cleanup: deleted {deleted} audio files, {len(old_calls)} DB rows older than {self.cfg.retention_days} days")
+
     def maintenance(self):
         """Run all storage maintenance tasks."""
         self.auto_mount_usb()
         self.enforce_retention()
+        self.enforce_calls_retention()
         self.enforce_capacity()

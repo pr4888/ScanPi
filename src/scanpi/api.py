@@ -1,6 +1,7 @@
 """REST API — FastAPI endpoints for web UI and external access."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import StreamingResponse
 
 from .config import ScanConfig
 from .db import ScanPiDB
@@ -106,6 +108,47 @@ def create_app(cfg: ScanConfig, db: ScanPiDB, scanner=None, surveyor=None,
         if upsampled.exists():
             return FileResponse(str(upsampled), media_type="audio/wav")
         return FileResponse(str(filepath), media_type="audio/wav")
+
+    # --- Server-Sent Events (real-time call updates) ---
+
+    @app.get("/api/events")
+    async def event_stream():
+        """SSE endpoint — streams new calls as they arrive."""
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def on_event(event_type: str, data: dict):
+            try:
+                queue.put_nowait({"event": event_type, "data": data})
+            except asyncio.QueueFull:
+                pass
+
+        if op25_bridge:
+            op25_bridge._event_listeners.append(on_event)
+
+        async def generate():
+            try:
+                while True:
+                    try:
+                        msg = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        yield f"event: {msg['event']}\ndata: {json.dumps(msg['data'])}\n\n"
+                    except asyncio.TimeoutError:
+                        # Send keepalive comment to prevent connection timeout
+                        yield ": keepalive\n\n"
+            except asyncio.CancelledError:
+                pass
+            finally:
+                if op25_bridge and on_event in op25_bridge._event_listeners:
+                    op25_bridge._event_listeners.remove(on_event)
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # --- Frequencies ---
 

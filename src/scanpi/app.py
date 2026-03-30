@@ -75,10 +75,17 @@ class ScanPiApp:
         # Start background services
         self._tasks = [
             asyncio.create_task(self._op25_bridge_loop(), name="op25_bridge"),
-            asyncio.create_task(self._survey_then_scan(), name="survey_scan"),
-            asyncio.create_task(self._transcription_loop(), name="transcribe"),
             asyncio.create_task(self._maintenance_loop(), name="maintenance"),
         ]
+
+        # Only start analog scanner if OP25 is NOT running (they share the SDR)
+        op25_active = Path("/tmp/op25.log").exists()
+        if op25_active:
+            log.info("OP25 active, analog scanner disabled")
+        else:
+            self._tasks.append(
+                asyncio.create_task(self._survey_then_scan(), name="survey_scan")
+            )
 
         # Start web server
         config = uvicorn.Config(
@@ -156,18 +163,6 @@ class ScanPiApp:
             pass
         except Exception as e:
             log.error(f"OP25 bridge error: {e}", exc_info=True)
-
-    async def _transcription_loop(self):
-        """Background transcription of recorded audio."""
-        if not self.cfg.transcribe_enabled:
-            log.info("Transcription disabled")
-            return
-        try:
-            await self.transcriber.idle_loop()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            log.error(f"Transcription error: {e}", exc_info=True)
 
     async def _maintenance_loop(self):
         """Periodic storage maintenance."""

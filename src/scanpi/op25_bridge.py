@@ -80,6 +80,7 @@ class OP25Bridge:
         self.active_calls: dict[int, ActiveCall] = {}
         self._running = False
         self._call_timeout = 3.0  # seconds of silence = call ended
+        self._event_listeners: list = []
 
         # Load talkgroup definitions
         if talkgroups_file:
@@ -233,14 +234,28 @@ class OP25Bridge:
             self.active_calls[tgid] = call
             log.info(f"Call started: {tg.name} (TG {tgid}) on {freq:.6f} MHz")
 
+    def emit_event(self, event_type: str, data: dict):
+        """Emit an event to all registered SSE listeners."""
+        for listener in self._event_listeners:
+            try:
+                listener(event_type, data)
+            except Exception:
+                pass
+
     def _save_call_sync(self, call: ActiveCall):
         """Synchronous version of _save_call (for use from _process_line)."""
         tg = self.get_talkgroup(call.tgid)
-        duration = call.last_update - call.start_time
+        audio_data = b"".join(call.audio_chunks)
+
+        # Calculate duration from audio data length (8kHz, 16-bit mono = 16000 bytes/sec)
+        if len(audio_data) > 320:
+            duration = len(audio_data) / (8000 * 2)
+        else:
+            duration = call.last_update - call.start_time
+
         tg.call_count += 1
         tg.total_duration += duration
 
-        audio_data = b"".join(call.audio_chunks)
         filepath = None
         size_bytes = 0
 
@@ -272,6 +287,18 @@ class OP25Bridge:
             log.info(f"Call saved: {tg.name} ({duration:.1f}s, {size_bytes/1024:.0f}KB)")
         else:
             log.info(f"Call logged: {tg.name} ({duration:.1f}s, no audio)")
+
+        # Emit SSE event for real-time UI updates
+        self.emit_event("new_call", {
+            "tgid": call.tgid,
+            "tg_name": tg.name,
+            "tg_category": tg.category,
+            "radio_id": call.radio_id,
+            "freq_mhz": call.freq_mhz,
+            "duration_s": round(duration, 1),
+            "has_audio": filepath is not None,
+            "start_time": call.start_time,
+        })
 
     async def _finalize_loop(self):
         """Periodically check for ended calls, grab remaining audio, and save."""
