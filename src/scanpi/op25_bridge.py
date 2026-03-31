@@ -79,7 +79,7 @@ class OP25Bridge:
         self.talkgroups: dict[int, Talkgroup] = {}
         self.active_calls: dict[int, ActiveCall] = {}
         self._running = False
-        self._call_timeout = 3.0  # seconds of silence = call ended
+        self._call_timeout = 10.0  # seconds — P25 voice updates gap 5-10s during retune
         self._event_listeners: list = []
 
         # Load talkgroup definitions
@@ -204,7 +204,8 @@ class OP25Bridge:
         tg = self.get_talkgroup(tgid)
         tg.last_active = now
 
-        # Grab any buffered audio and assign to the active talkgroup
+        # Grab any buffered audio — assign to the TG that just got a voice update
+        # (this is the one currently on the voice channel producing audio)
         audio = self._grab_audio() if hasattr(self, '_audio_lock') else b""
 
         if tgid in self.active_calls:
@@ -217,14 +218,9 @@ class OP25Bridge:
             if audio:
                 call.audio_chunks.append(audio)
         else:
-            # New call — flush audio from any other active call first
-            # (P25 single-channel: new TG = old TG call ended)
-            for other_tgid in list(self.active_calls.keys()):
-                if other_tgid != tgid:
-                    old_call = self.active_calls.pop(other_tgid)
-                    # Save synchronously (we're in the event loop via _process_line)
-                    self._save_call_sync(old_call)
-
+            # New talkgroup — start a new call
+            # Don't kill other active calls — let the timeout handle them
+            # (P25 TDMA can have 2 TGs active on different slots)
             call = ActiveCall(
                 tgid=tgid, start_time=now, last_update=now,
                 radio_id=rid, freq_mhz=freq,
@@ -275,6 +271,7 @@ class OP25Bridge:
                 log.error(f"Failed to save audio: {e}")
                 filepath = None
 
+        call_id = None
         with self.db.cursor() as c:
             c.execute("""
                 INSERT INTO calls (tgid, tg_name, tg_category, radio_id, freq_mhz,
@@ -282,20 +279,23 @@ class OP25Bridge:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (call.tgid, tg.name, tg.category, call.radio_id, call.freq_mhz,
                   call.start_time, call.last_update, duration, filepath, size_bytes))
+            call_id = c.lastrowid
 
         if filepath:
             log.info(f"Call saved: {tg.name} ({duration:.1f}s, {size_bytes/1024:.0f}KB)")
         else:
             log.info(f"Call logged: {tg.name} ({duration:.1f}s, no audio)")
 
-        # Emit SSE event for real-time UI updates
+        # Emit SSE event with call ID so the UI can play it
         self.emit_event("new_call", {
+            "id": call_id,
             "tgid": call.tgid,
             "tg_name": tg.name,
             "tg_category": tg.category,
             "radio_id": call.radio_id,
             "freq_mhz": call.freq_mhz,
             "duration_s": round(duration, 1),
+            "filepath": filepath,
             "has_audio": filepath is not None,
             "start_time": call.start_time,
         })
