@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ...alerts import scan as scan_alerts
+from ...notify import fire_webhook
 from ...tools import Tool, ToolStatus
 from ...retention import RetentionConfig, RetentionManager
 from .channels import Channel, CHANNELS_462
@@ -72,6 +73,8 @@ class GmrsTool(Tool):
         self._retention: RetentionManager | None = None
         self._max_age_days = float(cfg.get("max_age_days", 7.0))
         self._max_total_mb = float(cfg.get("max_total_mb", 512.0))
+        self._webhook_url = cfg.get("webhook_url") or os.environ.get("SCANPI_WEBHOOK_URL", "")
+        self._public_base = cfg.get("public_base_url") or os.environ.get("SCANPI_PUBLIC_URL", "")
 
     # --- lifecycle ------------------------------------------------------
 
@@ -287,6 +290,7 @@ class GmrsTool(Tool):
 
     def _on_transcribe_result(self, event_id: int, text: str | None, status: str):
         alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))
+        row = None
         with self._lock:
             if self._db is not None:
                 try:
@@ -294,9 +298,29 @@ class GmrsTool(Tool):
                                              alert_kind=alert_kind, alert_match=alert_match)
                 except Exception:
                     log.exception("failed to write transcript for event %d", event_id)
+                if alert_kind and self._webhook_url:
+                    row = self._db.conn.execute(
+                        "SELECT channel, freq_hz, start_ts, clip_path FROM tx_events WHERE id = ?",
+                        (event_id,),
+                    ).fetchone()
         if alert_kind:
             log.warning("🚨 ALERT ch=gmrs event=%d kind=%s match=%r text=%r",
                         event_id, alert_kind, alert_match, (text or "")[:100])
+            if self._webhook_url and row is not None:
+                clip_url = None
+                if row["clip_path"] and self._public_base:
+                    clip_url = f"{self._public_base.rstrip('/')}/tools/gmrs/api/clip/{event_id}"
+                fire_webhook(self._webhook_url, {
+                    "tool": "gmrs",
+                    "event_type": "alert",
+                    "alert_kind": alert_kind,
+                    "alert_match": alert_match,
+                    "channel": row["channel"],
+                    "freq_mhz": row["freq_hz"] / 1e6,
+                    "transcript": text,
+                    "timestamp": row["start_ts"],
+                    "clip_url": clip_url,
+                })
 
     # --- API ------------------------------------------------------------
 

@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from ...alerts import scan as scan_alerts
+from ...notify import fire_webhook
 from ...tools import Tool, ToolStatus
 from ...retention import RetentionConfig, RetentionManager
 from ..gmrs import _serve_file_with_range  # reuse range-aware audio serving
@@ -61,6 +62,8 @@ class OP25Tool(Tool):
         self._retention: RetentionManager | None = None
         self._max_age_days = float(cfg.get("max_age_days", 7.0))
         self._max_total_mb = float(cfg.get("max_total_mb", 1024.0))
+        self._webhook_url = cfg.get("webhook_url") or os.environ.get("SCANPI_WEBHOOK_URL", "")
+        self._public_base = cfg.get("public_base_url") or os.environ.get("SCANPI_PUBLIC_URL", "")
 
     # --- lifecycle ------------------------------------------------------
 
@@ -203,16 +206,40 @@ class OP25Tool(Tool):
             ))
 
     def _on_transcribe_result(self, call_id: int, text: str | None, status: str):
-        if self._db is not None:
-            alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))
-            try:
-                self._db.set_transcript(call_id, text, status,
-                                         alert_kind=alert_kind, alert_match=alert_match)
-            except Exception:
-                log.exception("failed to write transcript for call %d", call_id)
-            if alert_kind:
-                log.warning("🚨 ALERT ch=op25 call=%d kind=%s match=%r text=%r",
-                            call_id, alert_kind, alert_match, (text or "")[:100])
+        if self._db is None:
+            return
+        alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))
+        try:
+            self._db.set_transcript(call_id, text, status,
+                                     alert_kind=alert_kind, alert_match=alert_match)
+        except Exception:
+            log.exception("failed to write transcript for call %d", call_id)
+        if alert_kind:
+            log.warning("🚨 ALERT ch=op25 call=%d kind=%s match=%r text=%r",
+                        call_id, alert_kind, alert_match, (text or "")[:100])
+            # Fire webhook notification if configured.
+            if self._webhook_url:
+                row = self._db.conn.execute(
+                    "SELECT tgid, tg_name, category, freq_mhz, start_ts, clip_path "
+                    "FROM p25_calls WHERE id = ?", (call_id,),
+                ).fetchone()
+                if row:
+                    clip_url = None
+                    if row["clip_path"] and self._public_base:
+                        clip_url = f"{self._public_base.rstrip('/')}/tools/op25/api/clip/{call_id}"
+                    fire_webhook(self._webhook_url, {
+                        "tool": "op25",
+                        "event_type": "alert",
+                        "alert_kind": alert_kind,
+                        "alert_match": alert_match,
+                        "tgid": row["tgid"],
+                        "tg_name": row["tg_name"],
+                        "category": row["category"],
+                        "freq_mhz": row["freq_mhz"],
+                        "transcript": text,
+                        "timestamp": row["start_ts"],
+                        "clip_url": clip_url,
+                    })
 
     # --- status / summary -----------------------------------------------
 
