@@ -338,6 +338,14 @@ class OP25Tool(Tool):
             c["related"] = [dict(r) for r in related]
             return c
 
+        @r.get("/search")
+        def search(q: str = "", limit: int = 200):
+            if not self._db:
+                return {"q": q, "results": []}
+            if not q:
+                return {"q": q, "results": []}
+            return {"q": q, "results": self._db.search(q, limit=limit)}
+
         @r.get("/alerts")
         def alerts(limit: int = 20):
             if not self._db:

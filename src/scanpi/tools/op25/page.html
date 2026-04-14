@@ -37,7 +37,9 @@
 
   <section>
     <h2>Recent calls
-      <input id="recent-filter" placeholder="filter…" style="margin-left:12px;background:var(--bg-panel);border:1px solid var(--border);color:var(--green);padding:3px 8px;font-family:inherit;font-size:11px;width:200px">
+      <input id="recent-filter" class="search-box" placeholder="filter shown rows…" style="width:200px">
+      <input id="search-all"    class="search-box" placeholder="search ALL calls (transcripts, TGs)…" style="margin-left:8px">
+      <span id="search-result-count" style="color:var(--amber);font-size:11px;margin-left:8px"></span>
     </h2>
     <table id="recent">
       <thead><tr><th>Time</th><th>TGID</th><th>Name</th><th>Category</th><th class="num">Dur</th><th class="num">Freq</th><th>Audio</th><th>Transcript</th></tr></thead>
@@ -200,9 +202,10 @@ async function refresh() {
       if (!tr) {
         tr = document.createElement("tr");
         tr.dataset.callId = String(c.id);
+        tr.classList.add("expandable");
         if (c.alert_kind) tr.classList.add("alert");
         const audio = c.clip_path
-          ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px"></audio>`
+          ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
           : "—";
         tr.innerHTML = `
           <td>${fmt.time(c.start_ts)}</td>
@@ -213,6 +216,7 @@ async function refresh() {
           <td class="num">${fmt.freq(c.freq_mhz)}</td>
           <td>${audio}</td>
           <td class="transcript-cell">${transcriptCell(c)}</td>`;
+        tr.addEventListener("click", e => toggleDetail(c.id, tr));
       } else {
         const tc = tr.querySelector(".transcript-cell");
         if (tc) tc.innerHTML = transcriptCell(c);
@@ -228,14 +232,94 @@ async function refresh() {
     document.getElementById("updated").textContent = "error: " + err;
   }
 }
-// Client-side filter for Recent — matches TG name, TGID, category, transcript
+// Client-side filter for currently-rendered rows
 const filterInput = document.getElementById("recent-filter");
 filterInput.addEventListener("input", () => {
   const q = filterInput.value.trim().toLowerCase();
-  for (const row of document.querySelectorAll("#recent tbody tr")) {
+  for (const row of document.querySelectorAll("#recent tbody tr.expandable")) {
     row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? "" : "none";
   }
 });
+
+// Server-side search across ALL calls (debounced)
+let searchTimer = null;
+const searchAll = document.getElementById("search-all");
+const srCount = document.getElementById("search-result-count");
+searchAll.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchAll.value.trim();
+  if (!q) { srCount.textContent = ""; refresh(); return; }
+  searchTimer = setTimeout(async () => {
+    const resp = await fetch("api/search?q=" + encodeURIComponent(q) + "&limit=200").then(r => r.json());
+    srCount.textContent = `${resp.results.length} matches`;
+    // Replace Recent tbody with search results
+    renderRecentResults(resp.results);
+  }, 250);
+});
+
+function renderRecentResults(calls) {
+  const body = document.querySelector("#recent tbody");
+  body.innerHTML = "";
+  for (const c of calls) {
+    const tr = document.createElement("tr");
+    tr.dataset.callId = String(c.id);
+    tr.classList.add("expandable");
+    if (c.alert_kind) tr.classList.add("alert");
+    const audio = c.clip_path
+      ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
+      : "—";
+    tr.innerHTML = `
+      <td>${fmt.time(c.start_ts)}</td>
+      <td>${c.tgid}</td>
+      <td>${c.tg_name || ""}</td>
+      <td>${catTag(c.category||"other")}</td>
+      <td class="num">${fmt.dur(c.duration_s)}</td>
+      <td class="num">${fmt.freq(c.freq_mhz)}</td>
+      <td>${audio}</td>
+      <td class="transcript-cell">${transcriptCell(c)}</td>`;
+    tr.addEventListener("click", () => toggleDetail(c.id, tr));
+    body.appendChild(tr);
+  }
+}
+
+// Row click → expand inline detail row below
+async function toggleDetail(id, row) {
+  const next = row.nextSibling;
+  if (next && next.classList && next.classList.contains("detail") && next.dataset.forId === String(id)) {
+    next.remove();
+    row.classList.remove("expanded");
+    return;
+  }
+  // Remove any other open detail
+  for (const d of document.querySelectorAll("tr.detail")) d.remove();
+  for (const r of document.querySelectorAll("tr.expanded")) r.classList.remove("expanded");
+  // Fetch detail
+  const c = await fetch(`api/call/${id}`).then(r => r.json());
+  const related = (c.related || []).slice(0, 6).map(r =>
+    `<a href="#" onclick="event.preventDefault();document.querySelector('tr[data-call-id=&quot;${r.id}&quot;]')?.click();">${fmt.time(r.start_ts)} ${fmt.dur(r.duration_s)}</a>`
+  ).join("");
+  const alertHtml = c.alert_kind
+    ? `<div class="kv"><span class="k">alert</span><span class="v" style="color:var(--hot)">${c.alert_kind} ("${c.alert_match||""}")</span></div>` : "";
+  const det = document.createElement("tr");
+  det.className = "detail";
+  det.dataset.forId = String(id);
+  det.innerHTML = `<td colspan="8">
+    <div>
+      <span class="kv"><span class="k">ID</span><span class="v">${c.id}</span></span>
+      <span class="kv"><span class="k">TGID</span><span class="v">${c.tgid}</span></span>
+      <span class="kv"><span class="k">RID</span><span class="v">${c.rid||"-"}</span></span>
+      <span class="kv"><span class="k">Freq</span><span class="v">${(+c.freq_mhz).toFixed(4)} MHz</span></span>
+      <span class="kv"><span class="k">Start</span><span class="v">${fmt.time(c.start_ts)}</span></span>
+      <span class="kv"><span class="k">Duration</span><span class="v">${fmt.dur(c.duration_s)}</span></span>
+      ${alertHtml}
+    </div>
+    ${c.transcript ? `<div class="big-transcript">"${c.transcript.replace(/</g,"&lt;")}"</div>` : ''}
+    ${c.clip_path ? `<audio class="big-audio" controls preload="none" src="api/clip/${c.id}"></audio>` : '<div class="kv" style="color:var(--dim)">(audio clip pruned)</div>'}
+    ${related ? `<div class="related">related on ${c.tg_name}: ${related}</div>` : ''}
+  </td>`;
+  row.classList.add("expanded");
+  row.parentNode.insertBefore(det, row.nextSibling);
+}
 refresh();
 setInterval(refresh, 2000);
 </script>

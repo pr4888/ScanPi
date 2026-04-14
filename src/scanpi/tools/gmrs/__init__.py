@@ -361,6 +361,12 @@ class GmrsTool(Tool):
             e["related"] = [dict(r) for r in related]
             return e
 
+        @r.get("/search")
+        def search(q: str = "", limit: int = 200):
+            if not self._db or not q:
+                return {"q": q, "results": []}
+            return {"q": q, "results": self._db.search(q, limit=limit)}
+
         @r.get("/hourly")
         def hourly(hours: int = 24):
             if not self._db:

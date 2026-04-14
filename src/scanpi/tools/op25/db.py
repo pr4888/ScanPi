@@ -156,3 +156,24 @@ class OP25DB:
             "SELECT * FROM p25_calls ORDER BY start_ts DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def search(self, query: str, limit: int = 200) -> list[dict]:
+        """Full-text style search across transcript, tg_name, category, alert_kind.
+
+        Uses SQLite LIKE with % wildcards. Case-insensitive via LOWER().
+        """
+        q = query.strip()
+        if not q:
+            return []
+        like = f"%{q.lower()}%"
+        rows = self.conn.execute(
+            "SELECT * FROM p25_calls WHERE "
+            "LOWER(COALESCE(transcript,'')) LIKE ? OR "
+            "LOWER(COALESCE(tg_name,''))    LIKE ? OR "
+            "LOWER(COALESCE(category,''))   LIKE ? OR "
+            "LOWER(COALESCE(alert_kind,'')) LIKE ? OR "
+            "LOWER(COALESCE(alert_match,''))LIKE ? "
+            "ORDER BY start_ts DESC LIMIT ?",
+            (like, like, like, like, like, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]

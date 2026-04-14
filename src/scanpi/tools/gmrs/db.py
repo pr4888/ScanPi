@@ -173,3 +173,19 @@ class GmrsDB:
             "SELECT * FROM tx_events ORDER BY start_ts DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def search(self, query: str, limit: int = 200) -> list[dict]:
+        q = query.strip()
+        if not q:
+            return []
+        like = f"%{q.lower()}%"
+        rows = self.conn.execute(
+            "SELECT * FROM tx_events WHERE "
+            "LOWER(COALESCE(transcript,'')) LIKE ? OR "
+            "LOWER(COALESCE(alert_kind,'')) LIKE ? OR "
+            "LOWER(COALESCE(alert_match,''))LIKE ? OR "
+            "CAST(channel AS TEXT)          LIKE ? "
+            "ORDER BY start_ts DESC LIMIT ?",
+            (like, like, like, like, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
