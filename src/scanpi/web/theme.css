@@ -265,3 +265,30 @@ audio { filter: hue-rotate(220deg) saturate(0.7) brightness(0.85); height: 26px;
 
 /* Section spacing */
 section { margin-top: 22px; }
+
+/* Alert row + badge */
+tr.alert { background: rgba(255, 94, 94, 0.06) !important; }
+tr.alert td:first-child { border-left: 3px solid var(--hot); }
+.alert-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 2px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  font-weight: 700; margin-left: 6px;
+  background: var(--hot); color: #fff;
+  animation: alert-pulse 1.8s ease-in-out infinite;
+}
+.alert-badge.fire     { background: #ff5e5e; }
+.alert-badge.violence { background: #e03030; }
+.alert-badge.pursuit  { background: #ff7a00; }
+.alert-badge.medical  { background: #ff8844; }
+.alert-badge.emergency{ background: #ff2e2e; }
+.alert-badge.accident { background: #e07400; }
+@keyframes alert-pulse { 50% { opacity: 0.55; } }
+
+.alert-banner {
+  background: rgba(255, 94, 94, 0.1);
+  border-left: 3px solid var(--hot);
+  padding: 10px 14px; margin-bottom: 14px;
+  font-size: 12px;
+}
+.alert-banner strong { color: var(--hot); }
+.alert-banner .alert-ago { color: var(--amber); margin-left: 8px; }

@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS p25_calls (
     duration_s  REAL,
     clip_path   TEXT,
     transcript  TEXT,
-    transcript_status TEXT
+    transcript_status TEXT,
+    alert_kind  TEXT,           -- NULL, or 'fire'|'violence'|'pursuit'|'medical'|'emergency'|'accident'
+    alert_match TEXT             -- the actual keyword that fired
 );
 CREATE INDEX IF NOT EXISTS idx_p25_tgid  ON p25_calls(tgid);
 CREATE INDEX IF NOT EXISTS idx_p25_start ON p25_calls(start_ts);
@@ -36,6 +38,16 @@ class OP25DB:
         self._conn = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        # Migration for DBs from before alerts were added.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(p25_calls)").fetchall()}
+        if "alert_kind" not in cols:
+            self._conn.execute("ALTER TABLE p25_calls ADD COLUMN alert_kind TEXT")
+        if "alert_match" not in cols:
+            self._conn.execute("ALTER TABLE p25_calls ADD COLUMN alert_match TEXT")
+        # Indexes that depend on post-migration columns.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_p25_alert ON p25_calls(alert_kind)"
+        )
 
     def close(self):
         if self._conn:
@@ -64,11 +76,30 @@ class OP25DB:
             (end_ts, end_ts, clip_path, call_id),
         )
 
-    def set_transcript(self, call_id: int, text: str | None, status: str):
+    def set_transcript(self, call_id: int, text: str | None, status: str,
+                       alert_kind: str | None = None, alert_match: str | None = None):
         self.conn.execute(
-            "UPDATE p25_calls SET transcript = ?, transcript_status = ? WHERE id = ?",
-            (text, status, call_id),
+            "UPDATE p25_calls SET transcript = ?, transcript_status = ?, "
+            "alert_kind = ?, alert_match = ? WHERE id = ?",
+            (text, status, alert_kind, alert_match, call_id),
         )
+
+    def recent_alerts(self, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM p25_calls WHERE alert_kind IS NOT NULL "
+            "ORDER BY start_ts DESC LIMIT ?", (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def alert_counts_24h(self) -> dict[str, int]:
+        import time as _t
+        since = _t.time() - 86400
+        rows = self.conn.execute(
+            "SELECT alert_kind, COUNT(*) AS n FROM p25_calls "
+            "WHERE alert_kind IS NOT NULL AND start_ts >= ? GROUP BY alert_kind",
+            (since,),
+        ).fetchall()
+        return {r["alert_kind"]: r["n"] for r in rows}
 
     def orphan_cleanup(self):
         cur = self.conn.execute(

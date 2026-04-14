@@ -81,14 +81,17 @@ function chTag(num) {
 }
 
 function transcriptCell(e) {
+  const badge = e.alert_kind ? `<span class="alert-badge ${e.alert_kind}">${e.alert_kind}</span>` : "";
   const st = e.transcript_status;
-  if (st === "ok" && e.transcript) return `<span class="transcript">"${e.transcript}"</span>`;
-  if (st === "pending") return `<span class="transcript pending">transcribing…</span>`;
-  if (st === "silent") return `<span class="transcript empty">(no speech)</span>`;
-  if (st === "too_short") return `<span class="transcript empty">(too short)</span>`;
-  if (st === "failed" || st === "bad_wav" || st === "missing") return `<span class="transcript empty">—</span>`;
-  if (!st) return `<span class="transcript empty">—</span>`;
-  return `<span class="transcript empty">${st}</span>`;
+  let body;
+  if (st === "ok" && e.transcript) body = `<span class="transcript">"${e.transcript}"</span>`;
+  else if (st === "pending") body = `<span class="transcript pending">transcribing…</span>`;
+  else if (st === "silent") body = `<span class="transcript empty">(no speech)</span>`;
+  else if (st === "too_short") body = `<span class="transcript empty">(too short)</span>`;
+  else if (st === "failed" || st === "bad_wav" || st === "missing") body = `<span class="transcript empty">—</span>`;
+  else if (!st) body = `<span class="transcript empty">—</span>`;
+  else body = `<span class="transcript empty">${st}</span>`;
+  return body + badge;
 }
 
 function renderSpark(buckets, hours) {

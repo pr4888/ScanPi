@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from ...alerts import scan as scan_alerts
 from ...tools import Tool, ToolStatus
 from ...retention import RetentionConfig, RetentionManager
 from .channels import Channel, CHANNELS_462
@@ -284,12 +285,17 @@ class GmrsTool(Tool):
             ))
 
     def _on_transcribe_result(self, event_id: int, text: str | None, status: str):
+        alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))
         with self._lock:
             if self._db is not None:
                 try:
-                    self._db.set_transcript(event_id, text, status)
+                    self._db.set_transcript(event_id, text, status,
+                                             alert_kind=alert_kind, alert_match=alert_match)
                 except Exception:
                     log.exception("failed to write transcript for event %d", event_id)
+        if alert_kind:
+            log.warning("🚨 ALERT ch=gmrs event=%d kind=%s match=%r text=%r",
+                        event_id, alert_kind, alert_match, (text or "")[:100])
 
     # --- API ------------------------------------------------------------
 

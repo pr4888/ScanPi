@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from ...alerts import scan as scan_alerts
 from ...tools import Tool, ToolStatus
 from ...retention import RetentionConfig, RetentionManager
 from ..gmrs import _serve_file_with_range  # reuse range-aware audio serving
@@ -79,6 +80,25 @@ class OP25Tool(Tool):
         tg_path = self._op25_dir / self._tg_tsv_rel
         self._talkgroups = load_talkgroups(tg_path)
         log.info("loaded %d talkgroups from %s", len(self._talkgroups), tg_path)
+
+        # Migration: retroactive keyword alert scan on already-transcribed
+        # calls that were captured before the alert system existed.
+        unscanned = self._db.conn.execute(
+            "SELECT id, transcript FROM p25_calls "
+            "WHERE transcript IS NOT NULL AND transcript_status = 'ok' "
+            "AND alert_kind IS NULL"
+        ).fetchall()
+        flagged = 0
+        for row in unscanned:
+            kind, match = scan_alerts(row["transcript"])
+            if kind:
+                self._db.conn.execute(
+                    "UPDATE p25_calls SET alert_kind = ?, alert_match = ? WHERE id = ?",
+                    (kind, match, row["id"]),
+                )
+                flagged += 1
+        if unscanned:
+            log.info("retroactive alert scan: %d rows, %d flagged", len(unscanned), flagged)
 
         # Migration: earlier versions wrote priority ('1','2',...) into the
         # category column. Re-classify any rows whose category is a plain
@@ -184,10 +204,15 @@ class OP25Tool(Tool):
 
     def _on_transcribe_result(self, call_id: int, text: str | None, status: str):
         if self._db is not None:
+            alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))
             try:
-                self._db.set_transcript(call_id, text, status)
+                self._db.set_transcript(call_id, text, status,
+                                         alert_kind=alert_kind, alert_match=alert_match)
             except Exception:
                 log.exception("failed to write transcript for call %d", call_id)
+            if alert_kind:
+                log.warning("🚨 ALERT ch=op25 call=%d kind=%s match=%r text=%r",
+                            call_id, alert_kind, alert_match, (text or "")[:100])
 
     # --- status / summary -----------------------------------------------
 
@@ -253,6 +278,7 @@ class OP25Tool(Tool):
             "preview": preview,
             "preview_tg": preview_tg,
             "preview_ts": preview_ts,
+            "alert_counts": self._db.alert_counts_24h(),
         }
 
     # --- API ------------------------------------------------------------
@@ -311,6 +337,15 @@ class OP25Tool(Tool):
             ).fetchall()
             c["related"] = [dict(r) for r in related]
             return c
+
+        @r.get("/alerts")
+        def alerts(limit: int = 20):
+            if not self._db:
+                return {"alerts": [], "counts_24h": {}}
+            return {
+                "alerts": self._db.recent_alerts(limit),
+                "counts_24h": self._db.alert_counts_24h(),
+            }
 
         @r.get("/hourly")
         def hourly(hours: int = 24):

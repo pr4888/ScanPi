@@ -17,6 +17,7 @@
 </header>
 <main>
   <div class="last-line" id="last-line">Waiting for activity…</div>
+  <div id="alert-banner"></div>
   <div class="recommend" id="active">No active calls.</div>
 
   <section>
@@ -69,13 +70,16 @@ function catTag(cat) {
 }
 
 function transcriptCell(e) {
+  const badge = e.alert_kind ? `<span class="alert-badge ${e.alert_kind}">${e.alert_kind}</span>` : "";
   const st = e.transcript_status;
-  if (st === "ok" && e.transcript) return `<span class="transcript">"${e.transcript}"</span>`;
-  if (st === "pending")  return `<span class="transcript pending">transcribing…</span>`;
-  if (st === "silent")   return `<span class="transcript empty">(no speech)</span>`;
-  if (st === "too_short")return `<span class="transcript empty">(too short)</span>`;
-  if (!st) return `<span class="transcript empty">—</span>`;
-  return `<span class="transcript empty">${st}</span>`;
+  let body;
+  if (st === "ok" && e.transcript) body = `<span class="transcript">"${e.transcript}"</span>`;
+  else if (st === "pending")  body = `<span class="transcript pending">transcribing…</span>`;
+  else if (st === "silent")   body = `<span class="transcript empty">(no speech)</span>`;
+  else if (st === "too_short")body = `<span class="transcript empty">(too short)</span>`;
+  else if (!st) body = `<span class="transcript empty">—</span>`;
+  else body = `<span class="transcript empty">${st}</span>`;
+  return body + badge;
 }
 
 function renderSpark(buckets, hours) {
@@ -109,13 +113,31 @@ function renderSpark(buckets, hours) {
 
 async function refresh() {
   try {
-    const [live, stats, recent, hourly] = await Promise.all([
+    const [live, stats, recent, hourly, alerts] = await Promise.all([
       fetch("api/live").then(r => r.json()),
       fetch("api/stats?hours=24").then(r => r.json()),
       fetch("api/recent?limit=50").then(r => r.json()),
       fetch("api/hourly?hours=24").then(r => r.json()),
+      fetch("api/alerts?limit=5").then(r => r.json()),
     ]);
     renderSpark(hourly.buckets || [], hourly.hours || 24);
+
+    // Alert banner
+    const ab = document.getElementById("alert-banner");
+    if (alerts.alerts && alerts.alerts.length) {
+      const lines = alerts.alerts.slice(0, 3).map(a =>
+        `<span class="alert-badge ${a.alert_kind}">${a.alert_kind}</span> `
+        + `<strong>${a.tg_name || "TG-"+a.tgid}</strong>: `
+        + `"${(a.transcript || "").replace(/</g,"&lt;")}" `
+        + `<span class="alert-ago">${fmt.ago(a.start_ts)}</span>`
+      ).join("<br>");
+      const counts = Object.entries(alerts.counts_24h || {}).map(([k,v]) => `${k}:${v}`).join(" · ");
+      ab.className = "alert-banner";
+      ab.innerHTML = `<div style="color:var(--hot);font-weight:600;margin-bottom:6px">ALERTS — last 24h: ${counts || "none"}</div>${lines}`;
+    } else {
+      ab.className = "";
+      ab.innerHTML = "";
+    }
 
     document.getElementById("meta").textContent =
       live.running
@@ -178,6 +200,7 @@ async function refresh() {
       if (!tr) {
         tr = document.createElement("tr");
         tr.dataset.callId = String(c.id);
+        if (c.alert_kind) tr.classList.add("alert");
         const audio = c.clip_path
           ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px"></audio>`
           : "—";
