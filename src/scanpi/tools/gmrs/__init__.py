@@ -19,6 +19,7 @@ from ...tools import Tool, ToolStatus
 from .channels import Channel, CHANNELS_462
 from .db import GmrsDB
 from .monitor import GmrsMonitor, MonitorConfig
+from .transcriber import TranscribeJob, TranscriptionWorker
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,9 @@ class GmrsTool(Tool):
         self._live: dict[int, LiveChannelState] = {}
         self._open_events: dict[int, dict] = {}
         self._started_ts: float | None = None
+        self._ch_by_num: dict[int, Channel] = {c.num: c for c in self._channels}
+        self._transcriber: TranscriptionWorker | None = None
+        self._transcribe_enabled = bool(cfg.get("transcribe", True))
 
     # --- lifecycle ------------------------------------------------------
 
@@ -89,7 +93,26 @@ class GmrsTool(Tool):
         self._monitor.start()
         self._started_ts = time.time()
 
+        if self._transcribe_enabled:
+            model_dir = Path(self.config.get(
+                "whisper_model_dir",
+                Path(self._audio_dir).parent / "models",
+            ))
+            model_dir.mkdir(parents=True, exist_ok=True)
+            self._transcriber = TranscriptionWorker(
+                on_result=self._on_transcribe_result,
+                model_name=str(self.config.get("whisper_model", "tiny.en")),
+                model_dir=model_dir,
+            )
+            self._transcriber.start()
+
     def stop(self) -> None:
+        if self._transcriber is not None:
+            try:
+                self._transcriber.stop()
+            except Exception:
+                log.exception("transcriber stop failed")
+            self._transcriber = None
         if self._monitor is not None:
             try:
                 self._monitor.stop()
@@ -104,10 +127,17 @@ class GmrsTool(Tool):
 
     def status(self) -> ToolStatus:
         running = self._monitor is not None
-        last = max((s.last_event_ts for s in self._live.values()), default=0) if running else 0
+        # Prefer DB's last-end timestamp — survives restarts where in-memory
+        # state is reset but disk still has the history.
+        last = None
+        if self._db is not None:
+            last_in_mem = max((s.last_event_ts for s in self._live.values()), default=0)
+            last_db = self._db.last_event_end_ts()
+            last = max(filter(None, [last_in_mem if last_in_mem > 0 else None, last_db]),
+                       default=None)
         return ToolStatus(
             running=running, healthy=True,
-            last_activity_ts=last if last > 0 else None,
+            last_activity_ts=last,
             message=f"{len(self._channels)} channels @ {self._monitor_cfg.center_hz/1e6:.4f} MHz" if running else "stopped",
             extra={"channels": len(self._channels),
                    "squelch_db": self._monitor_cfg.squelch_db,
@@ -121,13 +151,19 @@ class GmrsTool(Tool):
         since = time.time() - 24 * 3600
         stats = self._db.channel_stats(since_ts=since)
         top = stats[0] if stats else None
+        top_freq_mhz = None
+        if top is not None:
+            ch = self._ch_by_num.get(top["channel"])
+            if ch is not None:
+                top_freq_mhz = round(ch.freq_hz / 1e6, 4)
         return {
             "running": True,
             "top_channel": top["channel"] if top else None,
-            "top_freq_mhz": None,  # filled below if top exists
+            "top_freq_mhz": top_freq_mhz,
             "top_count": top["tx_count"] if top else 0,
             "total_tx_24h": sum(s["tx_count"] for s in stats),
             "active_channels_24h": len(stats),
+            "last_activity_ts": self._db.last_event_end_ts(),
         }
 
     # --- monitor callbacks ---------------------------------------------
@@ -173,6 +209,7 @@ class GmrsTool(Tool):
         recorder = self._monitor.recorders.get(ch.num) if self._monitor else None
         if recorder is not None:
             clip_path, _ = recorder.stop_record()
+        evt_id_to_transcribe = None
         with self._lock:
             s = self._live[ch.num]
             duration = ts - (s.open_since or ts)
@@ -183,8 +220,26 @@ class GmrsTool(Tool):
             evt = self._open_events.pop(ch.num, None)
             if evt:
                 self._db.close_event(evt["id"], ts, clip_path=clip_path)
+                if clip_path and self._transcriber is not None:
+                    # Mark pending so UI shows "transcribing..."
+                    self._db.set_transcript(evt["id"], None, "pending")
+                    evt_id_to_transcribe = evt["id"]
             s.peak_rssi = -120.0
         log.info("CLOSE ch=%-2d  dur=%5.1fs  peak=%6.1f dBFS", ch.num, duration, peak)
+        if evt_id_to_transcribe is not None and clip_path:
+            self._transcriber.submit(TranscribeJob(
+                event_id=evt_id_to_transcribe,
+                clip_path=clip_path,
+                channel=ch.num,
+            ))
+
+    def _on_transcribe_result(self, event_id: int, text: str | None, status: str):
+        with self._lock:
+            if self._db is not None:
+                try:
+                    self._db.set_transcript(event_id, text, status)
+                except Exception:
+                    log.exception("failed to write transcript for event %d", event_id)
 
     # --- API ------------------------------------------------------------
 

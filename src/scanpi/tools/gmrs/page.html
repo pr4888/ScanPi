@@ -24,6 +24,12 @@
  h2 { font-size:13px; text-transform:uppercase; color:var(--dim); margin:0 0 8px; letter-spacing:.5px; }
  .recommend { background:var(--row); padding:12px 16px; border-left:3px solid var(--accent); margin-bottom:16px; }
  .recommend strong { color:var(--accent); }
+ .ch-tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:12px; font-weight:600; min-width:40px; text-align:center; }
+ .last-line { color:var(--dim); font-size:13px; margin-top:6px; }
+ .last-line strong { color:var(--fg); }
+ .transcript { color:var(--fg); font-style:italic; max-width:360px; word-break:break-word; }
+ .transcript.pending { color:var(--dim); font-style:normal; font-size:11px; }
+ .transcript.empty { color:#4a5260; font-size:11px; }
 </style>
 </head>
 <body>
@@ -36,6 +42,7 @@
   <div class="sub" id="updated">—</div>
 </header>
 <main>
+  <div class="last-line" id="last-tx">No activity yet.</div>
   <div class="recommend" id="recommend">Collecting data…</div>
 
   <section>
@@ -57,7 +64,7 @@
   <section>
     <h2>Recent transmissions</h2>
     <table id="recent">
-      <thead><tr><th>Time</th><th>Ch</th><th class="num">Dur</th><th class="num">Peak RSSI</th><th>Subtone</th><th>Audio</th></tr></thead>
+      <thead><tr><th>Time</th><th>Ch</th><th class="num">Dur</th><th class="num">Peak</th><th>Subtone</th><th>Audio</th><th>Transcript</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -78,6 +85,29 @@ function rssiBar(d) {
   return `<span class="rssi-bar" style="width:60px"><span class="rssi-fill" style="display:block;width:${pct}%"></span></span>`;
 }
 
+// Consistent color per channel so your eye tracks "Ch 1 is kids, Ch 16 is neighbor".
+// 15 channels in the 462 block — map to a distinguishable palette.
+const CH_COLOR = {
+  1:"#ff6b6b", 2:"#ffa500", 3:"#ffd700", 4:"#8fbc8f", 5:"#4ae04a",
+  6:"#40e0d0", 7:"#4a9eff",15:"#9370db",16:"#ff69b4",17:"#f08080",
+ 18:"#daa520",19:"#b8860b",20:"#7ec8e3",21:"#ee82ee",22:"#a0a0a0",
+};
+function chTag(num) {
+  const c = CH_COLOR[num] || "#888";
+  return `<span class="ch-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">Ch ${num}</span>`;
+}
+
+function transcriptCell(e) {
+  const st = e.transcript_status;
+  if (st === "ok" && e.transcript) return `<span class="transcript">"${e.transcript}"</span>`;
+  if (st === "pending") return `<span class="transcript pending">transcribing…</span>`;
+  if (st === "silent") return `<span class="transcript empty">(no speech)</span>`;
+  if (st === "too_short") return `<span class="transcript empty">(too short)</span>`;
+  if (st === "failed" || st === "bad_wav" || st === "missing") return `<span class="transcript empty">—</span>`;
+  if (!st) return `<span class="transcript empty">—</span>`;
+  return `<span class="transcript empty">${st}</span>`;
+}
+
 async function refresh() {
   try {
     const [live, stats, recent] = await Promise.all([
@@ -90,13 +120,24 @@ async function refresh() {
       `center ${(live.center_hz/1e6).toFixed(4)} MHz · ${(live.sample_rate/1e6).toFixed(1)} Msps · sq ${live.squelch_db} dB`;
     document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
 
+    // Last-TX summary line
+    const lastLine = document.getElementById("last-tx");
+    const last = recent.events.find(e => e.end_ts);
+    if (last) {
+      lastLine.innerHTML = `Last TX: <strong>${fmt.ago(last.end_ts)}</strong> on `
+        + `${chTag(last.channel)} · <strong>${fmt.dur(last.duration_s)}</strong> · `
+        + `peak <strong>${fmt.rssi(last.peak_rssi)} dBFS</strong>`;
+    } else {
+      lastLine.textContent = "No activity yet.";
+    }
+
     const liveTbody = document.querySelector("#live tbody");
     liveTbody.innerHTML = "";
     for (const c of live.channels) {
       const tr = document.createElement("tr");
       if (c.open) tr.classList.add("open");
       tr.innerHTML = `
-        <td>Ch ${c.channel}</td>
+        <td>${chTag(c.channel)}</td>
         <td class="freq">${fmt.freq(c.freq_hz)}</td>
         <td>${fmt.rssi(c.last_rssi)} ${rssiBar(c.last_rssi)}</td>
         <td>${fmt.rssi(c.peak_rssi)}</td>
@@ -111,7 +152,7 @@ async function refresh() {
       const tr = document.createElement("tr");
       const hot = top && s.channel === top.channel ? "hot" : "";
       tr.innerHTML = `
-        <td class="${hot}">Ch ${s.channel}</td>
+        <td>${chTag(s.channel)}</td>
         <td class="num ${hot}">${s.tx_count}</td>
         <td class="num">${fmt.dur(s.total_airtime_s)}</td>
         <td class="num">${fmt.dur(s.avg_duration_s)}</td>
@@ -151,11 +192,17 @@ async function refresh() {
           : "—";
         tr.innerHTML = `
           <td>${fmt.time(e.start_ts)}</td>
-          <td>Ch ${e.channel}</td>
+          <td>${chTag(e.channel)}</td>
           <td class="num">${fmt.dur(e.duration_s)}</td>
           <td class="num">${fmt.rssi(e.peak_rssi)}</td>
           <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
-          <td>${audio}</td>`;
+          <td>${audio}</td>
+          <td class="transcript-cell">${transcriptCell(e)}</td>`;
+      } else {
+        // Row exists — only refresh the transcript cell (may change from
+        // "pending" to actual text after Whisper finishes).
+        const tc = tr.querySelector(".transcript-cell");
+        if (tc) tc.innerHTML = transcriptCell(e);
       }
       // Position it after prev (preserves server order without touching unchanged rows).
       if (prev === null) {

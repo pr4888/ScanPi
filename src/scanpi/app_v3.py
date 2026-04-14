@@ -119,10 +119,28 @@ async function render(){
       }
     }
     const statusMsg = t.status && t.status.message ? t.status.message : '';
-    const lastActivity = t.status && t.status.last_activity_ts ? '<div class="meta"><span>last activity: <strong>'+fmtAgo(t.status.last_activity_ts)+'</strong></span></div>' : '';
+    const sm = t.summary || {};
+    // Big stats block — "what's this tool doing lately" at a glance
+    let stats = '';
+    if (sm.running && (sm.total_tx_24h || sm.top_channel != null)) {
+      const topLabel = sm.top_channel != null
+        ? `Ch ${sm.top_channel}${sm.top_freq_mhz ? ` (${sm.top_freq_mhz} MHz)` : ''}`
+        : '—';
+      stats = '<div style="display:flex;gap:18px;margin:10px 0 6px">'
+        + '<div><div style="font-size:22px;font-weight:600">'+(sm.total_tx_24h||0)+'</div>'
+        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">TX / 24h</div></div>'
+        + '<div><div style="font-size:22px;font-weight:600">'+(sm.active_channels_24h||0)+'</div>'
+        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">active ch</div></div>'
+        + '<div><div style="font-size:14px;font-weight:600;margin-top:4px">'+topLabel+'</div>'
+        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">busiest</div></div>'
+        + '</div>';
+    }
+    const lastTs = (sm && sm.last_activity_ts) || (t.status && t.status.last_activity_ts);
+    const lastActivity = lastTs ? '<div class="meta"><span>last activity: <strong>'+fmtAgo(lastTs)+'</strong></span></div>' : '';
     card.innerHTML =
       '<h3>'+t.name+' <span class="tag '+tagClass+'">'+tagText+'</span>'+activeTag+sdrBadge+'</h3>'+
       '<div class="desc">'+t.description+'</div>'+
+      stats +
       '<div class="meta">'+statusMsg+'</div>'+lastActivity+
       '<div style="margin-top:10px;display:flex;gap:8px"><a class="inline" href="/tools/'+t.id+'/">Open →</a>'+controls+'</div>';
     grid.appendChild(card);
