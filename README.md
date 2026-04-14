@@ -144,6 +144,117 @@ Then drop your system's `.json` + `.tsv` talkgroup file into
 `talkgroups_tsv` in the tool config (ScanPi defaults: `clmrn_cfg.json`
 and `clmrn_talkgroups.tsv`).
 
+## Alert webhooks (push notifications)
+
+Every transcribed call is scanned for emergency keywords. Matches (kind =
+`fire`, `violence`, `pursuit`, `medical`, `emergency`, `accident`) POST a
+JSON blob to a URL you configure — ScanPi stays generic, you pipe it to
+whatever notification service you already use.
+
+Set it up with one env var in the systemd unit:
+
+```bash
+sudo systemctl edit scanpi.service
+# Add:
+[Service]
+Environment="SCANPI_WEBHOOK_URL=https://your-endpoint"
+Environment="SCANPI_PUBLIC_URL=http://scanpi.local:8080"  # optional, included in payload
+sudo systemctl restart scanpi.service
+```
+
+The payload is a single JSON POST:
+
+```json
+{
+  "tool": "op25",
+  "event_type": "alert",
+  "alert_kind": "fire",
+  "alert_match": "working fire",
+  "tgid": 8852,
+  "tg_name": "Groton Fire Ops 1",
+  "category": "fire",
+  "freq_mhz": 852.1625,
+  "transcript": "Dispatch to 14, we have a working fire at 42 Main Street",
+  "timestamp": 1700000000.0,
+  "clip_url": "http://scanpi.local:8080/tools/op25/api/clip/123"
+}
+```
+
+### Recipe: ntfy.sh (simplest phone push)
+
+```
+SCANPI_WEBHOOK_URL=https://ntfy.sh/YOUR-SECRET-TOPIC
+```
+
+Install the ntfy app, subscribe to `YOUR-SECRET-TOPIC`, phone notifies on
+every alert. Server-side formatting isn't ideal (you get raw JSON) — for
+prettier output, run a tiny adapter:
+
+```bash
+# ntfy-adapter.sh — run behind nginx or in a container
+while read POST; do
+  ...  # parse JSON with jq, send to ntfy with -H Title: ...
+done
+```
+
+### Recipe: Home Assistant
+
+```yaml
+# configuration.yaml
+rest_command:
+  # (nothing — ScanPi is the one POSTing)
+
+automation:
+  - alias: "ScanPi alert"
+    trigger:
+      platform: webhook
+      webhook_id: scanpi-alerts
+    action:
+      - service: notify.mobile_app_patricks_phone
+        data:
+          title: "🚨 {{ trigger.json.alert_kind | upper }} — {{ trigger.json.tg_name }}"
+          message: "{{ trigger.json.transcript }}"
+          data:
+            url: "{{ trigger.json.clip_url }}"
+```
+
+Then:
+
+```
+SCANPI_WEBHOOK_URL=https://ha.example/api/webhook/scanpi-alerts
+```
+
+### Recipe: Discord webhook
+
+Discord wants a specific payload shape, so run a 20-line adapter:
+
+```python
+# /usr/local/bin/scanpi-discord.py
+from flask import Flask, request
+import requests
+app = Flask(__name__)
+DISCORD = "https://discord.com/api/webhooks/..."
+@app.route("/scanpi", methods=["POST"])
+def forward():
+    e = request.get_json()
+    requests.post(DISCORD, json={
+        "embeds": [{
+            "title": f"🚨 {e['alert_kind'].upper()} — {e.get('tg_name') or 'Ch '+str(e.get('channel'))}",
+            "description": e.get("transcript","(no transcript)"),
+            "color": 0xff5e5e,
+            "fields": [
+                {"name": "Category", "value": e.get("category",""), "inline": True},
+                {"name": "Freq",     "value": f"{e['freq_mhz']:.4f} MHz", "inline": True},
+            ],
+            "url": e.get("clip_url"),
+        }]
+    })
+    return "", 204
+app.run(host="127.0.0.1", port=9000)
+```
+
+Then `SCANPI_WEBHOOK_URL=http://127.0.0.1:9000/scanpi`.
+
 ## Writing your own tool
 
 Implement `scanpi.tools.Tool`:
