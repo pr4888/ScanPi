@@ -28,6 +28,13 @@
   </section>
 
   <section>
+    <h2>Frequent phrases (last 24h)</h2>
+    <div class="panel" id="phrases" style="font-size:12px;line-height:2.2">
+      <span style="color:var(--green-dim)">Loading…</span>
+    </div>
+  </section>
+
+  <section>
     <h2>Talkgroups (last 24h)</h2>
     <table id="stats">
       <thead><tr><th>TGID</th><th>Name</th><th>Category</th><th class="num">Calls</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last</th></tr></thead>
@@ -115,13 +122,25 @@ function renderSpark(buckets, hours) {
 
 async function refresh() {
   try {
-    const [live, stats, recent, hourly, alerts] = await Promise.all([
+    const [live, stats, recent, hourly, alerts, phrases] = await Promise.all([
       fetch("api/live").then(r => r.json()),
       fetch("api/stats?hours=24").then(r => r.json()),
       fetch("api/recent?limit=50").then(r => r.json()),
       fetch("api/hourly?hours=24").then(r => r.json()),
       fetch("api/alerts?limit=5").then(r => r.json()),
+      fetch("api/phrases?hours=24&limit=30").then(r => r.json()),
     ]);
+    // Phrases block — click a phrase to search it
+    const ph = document.getElementById("phrases");
+    if (phrases.phrases && phrases.phrases.length) {
+      const maxN = phrases.phrases[0].n;
+      ph.innerHTML = phrases.phrases.map(p => {
+        const scale = 0.9 + 0.9 * (p.n / maxN);
+        return `<a href="#" onclick="event.preventDefault();searchAll.value='${p.phrase.replace(/'/g,"\\\\'")}';searchAll.dispatchEvent(new Event('input'));document.getElementById('recent').scrollIntoView({behavior:'smooth'});" style="display:inline-block;margin-right:14px;margin-bottom:4px;color:var(--green);font-size:${(scale*13).toFixed(0)}px;border-bottom:1px dashed var(--green-deep)">"${p.phrase}"<span style="color:var(--amber);font-size:10px;margin-left:4px">${p.n}×</span></a>`;
+      }).join("");
+    } else {
+      ph.innerHTML = '<span style="color:var(--green-dim)">No transcripts yet.</span>';
+    }
     renderSpark(hourly.buckets || [], hourly.hours || 24);
 
     // Alert banner

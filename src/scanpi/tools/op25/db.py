@@ -157,6 +157,23 @@ class OP25DB:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def top_phrases(self, hours: int = 24, limit: int = 20) -> list[dict]:
+        """Return the most frequently transcribed phrases, lowercased + trimmed.
+        Useful as a scanner-intel word cloud.
+        """
+        import time as _t
+        since = _t.time() - hours * 3600
+        rows = self.conn.execute(
+            "SELECT LOWER(TRIM(transcript)) AS phrase, COUNT(*) AS n "
+            "FROM p25_calls "
+            "WHERE transcript_status = 'ok' AND transcript IS NOT NULL "
+            "AND LENGTH(TRIM(transcript)) >= 2 "
+            "AND start_ts >= ? "
+            "GROUP BY phrase ORDER BY n DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def search(self, query: str, limit: int = 200) -> list[dict]:
         """Full-text style search across transcript, tg_name, category, alert_kind.
 

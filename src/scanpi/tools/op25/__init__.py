@@ -346,6 +346,12 @@ class OP25Tool(Tool):
                 return {"q": q, "results": []}
             return {"q": q, "results": self._db.search(q, limit=limit)}
 
+        @r.get("/phrases")
+        def phrases(hours: int = 24, limit: int = 20):
+            if not self._db:
+                return {"hours": hours, "phrases": []}
+            return {"hours": hours, "phrases": self._db.top_phrases(hours=hours, limit=limit)}
+
         @r.get("/alerts")
         def alerts(limit: int = 20):
             if not self._db:
