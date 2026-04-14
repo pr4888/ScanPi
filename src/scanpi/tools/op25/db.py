@@ -1,0 +1,100 @@
+"""SQLite event log for the OP25 P25 trunking tool."""
+from __future__ import annotations
+
+import sqlite3
+import time
+from pathlib import Path
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS p25_calls (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    tgid        INTEGER NOT NULL,
+    tg_name     TEXT,
+    category    TEXT,
+    rid         INTEGER,
+    freq_mhz    REAL,
+    start_ts    REAL NOT NULL,
+    end_ts      REAL,
+    duration_s  REAL,
+    clip_path   TEXT,
+    transcript  TEXT,
+    transcript_status TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_p25_tgid  ON p25_calls(tgid);
+CREATE INDEX IF NOT EXISTS idx_p25_start ON p25_calls(start_ts);
+"""
+
+
+class OP25DB:
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: sqlite3.Connection | None = None
+
+    def connect(self):
+        self._conn = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(SCHEMA)
+
+    def close(self):
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        if not self._conn:
+            raise RuntimeError("OP25DB not connected")
+        return self._conn
+
+    def open_call(self, tgid: int, tg_name: str, category: str,
+                  rid: int, freq_mhz: float, start_ts: float) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO p25_calls (tgid, tg_name, category, rid, freq_mhz, start_ts) "
+            "VALUES (?,?,?,?,?,?)",
+            (tgid, tg_name, category, rid, freq_mhz, start_ts),
+        )
+        return cur.lastrowid
+
+    def close_call(self, call_id: int, end_ts: float, clip_path: str | None = None):
+        self.conn.execute(
+            "UPDATE p25_calls SET end_ts = ?, duration_s = ? - start_ts, clip_path = ? "
+            "WHERE id = ?",
+            (end_ts, end_ts, clip_path, call_id),
+        )
+
+    def set_transcript(self, call_id: int, text: str | None, status: str):
+        self.conn.execute(
+            "UPDATE p25_calls SET transcript = ?, transcript_status = ? WHERE id = ?",
+            (text, status, call_id),
+        )
+
+    def orphan_cleanup(self):
+        cur = self.conn.execute(
+            "UPDATE p25_calls SET end_ts = start_ts, duration_s = 0 WHERE end_ts IS NULL"
+        )
+        return cur.rowcount
+
+    def recent(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM p25_calls ORDER BY start_ts DESC LIMIT ?", (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def talkgroup_stats(self, since_ts: float = 0.0) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT tgid, MAX(tg_name) AS tg_name, MAX(category) AS category, "
+            "COUNT(*) AS call_count, SUM(duration_s) AS total_airtime_s, "
+            "AVG(duration_s) AS avg_duration_s, MAX(end_ts) AS last_active "
+            "FROM p25_calls WHERE end_ts IS NOT NULL AND start_ts >= ? "
+            "GROUP BY tgid ORDER BY call_count DESC",
+            (since_ts,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def last_call_end_ts(self) -> float | None:
+        row = self.conn.execute(
+            "SELECT MAX(end_ts) AS t FROM p25_calls WHERE end_ts IS NOT NULL"
+        ).fetchone()
+        return row["t"] if row and row["t"] else None

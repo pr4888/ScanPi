@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi :: P25 Trunking</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; P25 Trunking</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="last-line" id="last-line">Waiting for activity…</div>
+  <div class="recommend" id="active">No active calls.</div>
+
+  <section>
+    <h2>Talkgroup activity (last 24h)</h2>
+    <table id="stats">
+      <thead><tr><th>TGID</th><th>Name</th><th>Category</th><th class="num">Calls</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent calls</h2>
+    <table id="recent">
+      <thead><tr><th>Time</th><th>TGID</th><th>Name</th><th>Category</th><th class="num">Dur</th><th class="num">Freq</th><th>Audio</th><th>Transcript</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const CATEGORY_STYLE = {
+  police:  { bg: "#0a1a33", fg: "#6fa8ff", border: "#244b8a" },
+  fire:    { bg: "#331010", fg: "#ff8888", border: "#7a2525" },
+  ems:     { bg: "#331b0a", fg: "#ffb366", border: "#7a4a20" },
+  transit: { bg: "#2a0a33", fg: "#c88fff", border: "#5a1f75" },
+  utility: { bg: "#0a332c", fg: "#6fffe0", border: "#1d6b5a" },
+  school:  { bg: "#333008", fg: "#ffe066", border: "#75651a" },
+  other:   { bg: "#111518", fg: "#88a0aa", border: "#2a3640" },
+};
+
+const fmt = {
+  dur:  s => s == null ? "—" : s < 60 ? (+s).toFixed(1)+"s" : ((+s)/60).toFixed(1)+"m",
+  freq: mhz => mhz == null ? "—" : (+mhz).toFixed(4)+" MHz",
+  time: ts => ts ? new Date((+ts)*1000).toLocaleTimeString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=(Date.now()/1000-(+ts)); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; },
+};
+
+function catTag(cat) {
+  const s = CATEGORY_STYLE[cat] || CATEGORY_STYLE.other;
+  return `<span class="ch-tag" style="background:${s.bg};color:${s.fg};border-color:${s.border}">${cat||"other"}</span>`;
+}
+
+function transcriptCell(e) {
+  const st = e.transcript_status;
+  if (st === "ok" && e.transcript) return `<span class="transcript">"${e.transcript}"</span>`;
+  if (st === "pending")  return `<span class="transcript pending">transcribing…</span>`;
+  if (st === "silent")   return `<span class="transcript empty">(no speech)</span>`;
+  if (st === "too_short")return `<span class="transcript empty">(too short)</span>`;
+  if (!st) return `<span class="transcript empty">—</span>`;
+  return `<span class="transcript empty">${st}</span>`;
+}
+
+async function refresh() {
+  try {
+    const [live, stats, recent] = await Promise.all([
+      fetch("api/live").then(r => r.json()),
+      fetch("api/stats?hours=24").then(r => r.json()),
+      fetch("api/recent?limit=50").then(r => r.json()),
+    ]);
+
+    document.getElementById("meta").textContent =
+      live.running
+        ? `CC ${live.cc_freq_mhz ? (+live.cc_freq_mhz).toFixed(5)+" MHz" : "acquiring…"} · pid ${live.pid||"?"}`
+        : "decoder stopped";
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+
+    // Active calls banner
+    const act = document.getElementById("active");
+    if (live.active_calls && live.active_calls.length) {
+      act.innerHTML = "<strong>LIVE:</strong> " + live.active_calls.map(c => {
+        const tg = stats.talkgroups.find(t => t.tgid === c.tgid);
+        const name = tg ? tg.tg_name : `TG-${c.tgid}`;
+        return `${name} (${c.tgid}) · ${(+c.freq_mhz).toFixed(4)} MHz · ${c.elapsed_s}s`;
+      }).join(" &nbsp;|&nbsp; ");
+    } else {
+      act.innerHTML = "No active calls.";
+    }
+
+    // Last-call line (from recent feed)
+    const lastLine = document.getElementById("last-line");
+    const last = recent.calls.find(c => c.end_ts);
+    if (last) {
+      lastLine.innerHTML = `Last call: <strong>${fmt.ago(last.end_ts)}</strong> · `
+        + `${last.tg_name || "TG-"+last.tgid} ${catTag(last.category||"other")} · `
+        + `<strong>${fmt.dur(last.duration_s)}</strong>`;
+    } else {
+      lastLine.textContent = "Waiting for activity…";
+    }
+
+    // Stats table
+    const st = document.querySelector("#stats tbody");
+    st.innerHTML = "";
+    for (const t of stats.talkgroups) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${t.tgid}</td>
+        <td>${t.tg_name || ""}</td>
+        <td>${catTag(t.category||"other")}</td>
+        <td class="num">${t.call_count}</td>
+        <td class="num">${fmt.dur(t.total_airtime_s)}</td>
+        <td class="num">${fmt.dur(t.avg_duration_s)}</td>
+        <td>${fmt.ago(t.last_active)}</td>`;
+      st.appendChild(tr);
+    }
+
+    // Recent (incremental — preserve <audio> playback)
+    const body = document.querySelector("#recent tbody");
+    const existing = new Map();
+    for (const row of body.querySelectorAll("tr[data-call-id]")) {
+      existing.set(row.dataset.callId, row);
+    }
+    const wanted = new Set(recent.calls.map(c => String(c.id)));
+    for (const [id, row] of existing) {
+      if (!wanted.has(id)) row.remove();
+    }
+    let prev = null;
+    for (const c of recent.calls) {
+      let tr = existing.get(String(c.id));
+      if (!tr) {
+        tr = document.createElement("tr");
+        tr.dataset.callId = String(c.id);
+        const audio = c.clip_path
+          ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px"></audio>`
+          : "—";
+        tr.innerHTML = `
+          <td>${fmt.time(c.start_ts)}</td>
+          <td>${c.tgid}</td>
+          <td>${c.tg_name || ""}</td>
+          <td>${catTag(c.category||"other")}</td>
+          <td class="num">${fmt.dur(c.duration_s)}</td>
+          <td class="num">${fmt.freq(c.freq_mhz)}</td>
+          <td>${audio}</td>
+          <td class="transcript-cell">${transcriptCell(c)}</td>`;
+      } else {
+        const tc = tr.querySelector(".transcript-cell");
+        if (tc) tc.innerHTML = transcriptCell(c);
+      }
+      if (prev === null) {
+        if (body.firstChild !== tr) body.insertBefore(tr, body.firstChild);
+      } else if (prev.nextSibling !== tr) {
+        body.insertBefore(tr, prev.nextSibling);
+      }
+      prev = tr;
+    }
+  } catch (err) {
+    document.getElementById("updated").textContent = "error: " + err;
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

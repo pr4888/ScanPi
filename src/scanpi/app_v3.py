@@ -231,9 +231,10 @@ def _status_dict(status) -> dict:
 
 def run_v3(host: str = "0.0.0.0", port: int = 8080,
            data_dir: Path | None = None):
-    """Build registry with GMRS tool, wire coordinator, start server."""
+    """Build registry with available tools, wire coordinator, start server."""
     import uvicorn
     from .tools.gmrs import GmrsTool
+    from .tools.op25 import OP25Tool
 
     logging.basicConfig(
         level=logging.INFO,
@@ -244,6 +245,7 @@ def run_v3(host: str = "0.0.0.0", port: int = 8080,
 
     registry = ToolRegistry()
     registry.register(GmrsTool(config={"data_dir": str(data_dir)}))
+    registry.register(OP25Tool(config={"data_dir": str(data_dir)}))
 
     coord = SdrCoordinator(registry, state_file=data_dir / "coordinator.json")
     coord.start_non_sdr_tools()
