@@ -16,6 +16,17 @@ from ...tools import Tool, ToolStatus
 from .db import YSoneDB
 from .worker import SweepConfig, YSOneWorker
 
+
+# Common sub-1 GHz ISM band presets. Each: (start_hz, stop_hz, step_hz, default_mod)
+BAND_PRESETS = {
+    "ism-315":  (300_000_000, 348_000_000, 250_000, "ask_ook"),   # car remotes, tire sensors
+    "ism-433":  (431_000_000, 435_000_000, 100_000, "ask_ook"),   # weather stations, door sensors
+    "lpd433":   (433_050_000, 434_790_000,  25_000, "fsk2"),      # license-free EU/US remotes
+    "ism-868":  (863_000_000, 870_000_000, 125_000, "gfsk"),      # EU LoRa, Z-Wave EU
+    "ism-915":  (902_000_000, 928_000_000, 250_000, "gfsk"),      # US LoRa, Z-Wave US, weather
+    "zwave-us": (908_000_000, 909_000_000,  25_000, "gfsk"),      # focused Z-Wave US
+}
+
 log = logging.getLogger(__name__)
 
 
@@ -33,15 +44,22 @@ class YardstickTool(Tool):
         self._db = YSoneDB(self._db_path)
         self._db.connect()
 
+        # Allow config "band" preset to seed start/stop/step/mod; any explicit
+        # start_hz/stop_hz/etc. override the preset.
+        band = cfg.get("band", "ism-915")
+        preset = BAND_PRESETS.get(band, BAND_PRESETS["ism-915"])
+        start, stop, step, mod = preset
         self._sweep_cfg = SweepConfig(
-            start_hz=int(cfg.get("start_hz", 902_000_000)),
-            stop_hz=int(cfg.get("stop_hz", 928_000_000)),
-            step_hz=int(cfg.get("step_hz", 250_000)),
+            start_hz=int(cfg.get("start_hz", start)),
+            stop_hz=int(cfg.get("stop_hz", stop)),
+            step_hz=int(cfg.get("step_hz", step)),
             bw_hz=int(cfg.get("bw_hz", 125_000)),
             baud=int(cfg.get("baud", 4800)),
             burst_threshold_dbm=float(cfg.get("burst_threshold_dbm", -70.0)),
-            modulation=str(cfg.get("modulation", "ask_ook")),
+            modulation=str(cfg.get("modulation", mod)),
         )
+        self._band = band
+        self._stare_freq_hz: int | None = None
         self._worker: YSOneWorker | None = None
         self._started_ts: float | None = None
 
@@ -87,9 +105,14 @@ class YardstickTool(Tool):
         except Exception:
             pass
 
-    def _on_burst(self, ts: float, freq_hz: int, rssi_dbm: float):
-        self._db.log_burst(ts, freq_hz, rssi_dbm, modulation=self._sweep_cfg.modulation)
-        log.info("YS1 burst @ %.3f MHz  %.1f dBm", freq_hz / 1e6, rssi_dbm)
+    def _on_burst(self, ts: float, freq_hz: int, rssi_dbm: float,
+                   bytes_hex: str = "", guess: str = ""):
+        self._db.log_burst(ts, freq_hz, rssi_dbm,
+                           modulation=self._sweep_cfg.modulation,
+                           bytes_hex=bytes_hex, note=guess)
+        snippet = bytes_hex[:20] + ("…" if len(bytes_hex) > 20 else "")
+        log.info("YS1 burst @ %.3f MHz  %.1f dBm  bytes=%s  [%s]",
+                 freq_hz / 1e6, rssi_dbm, snippet or "(none)", guess)
 
     # --- status / summary ----------------------------------------------
 
@@ -132,8 +155,55 @@ class YardstickTool(Tool):
 
     # --- API ------------------------------------------------------------
 
+    def reconfigure(self, band: str | None = None, threshold_dbm: float | None = None,
+                    modulation: str | None = None):
+        """Change sweep config on the fly. Restarts the worker."""
+        if band and band in BAND_PRESETS:
+            start, stop, step, mod = BAND_PRESETS[band]
+            self._sweep_cfg.start_hz = start
+            self._sweep_cfg.stop_hz = stop
+            self._sweep_cfg.step_hz = step
+            if not modulation:
+                self._sweep_cfg.modulation = mod
+            self._band = band
+        if threshold_dbm is not None:
+            self._sweep_cfg.burst_threshold_dbm = float(threshold_dbm)
+        if modulation:
+            self._sweep_cfg.modulation = modulation
+        # Restart worker so new config takes effect
+        if self._worker is not None:
+            try: self._worker.stop()
+            except Exception: pass
+            self._worker = YSOneWorker(
+                self._sweep_cfg, on_spectrum=self._on_spectrum, on_burst=self._on_burst,
+            )
+            self._worker.start()
+
     def api_router(self):
         r = APIRouter()
+
+        @r.get("/bands")
+        def bands():
+            return {"current": self._band, "presets": {
+                k: {"start_mhz": v[0]/1e6, "stop_mhz": v[1]/1e6,
+                    "step_khz": v[2]/1e3, "default_modulation": v[3]}
+                for k, v in BAND_PRESETS.items()
+            }}
+
+        @r.post("/configure")
+        def configure(body: dict):
+            self.reconfigure(
+                band=body.get("band"),
+                threshold_dbm=body.get("threshold_dbm"),
+                modulation=body.get("modulation"),
+            )
+            return {
+                "band": self._band,
+                "start_mhz": self._sweep_cfg.start_hz / 1e6,
+                "stop_mhz":  self._sweep_cfg.stop_hz / 1e6,
+                "threshold_dbm": self._sweep_cfg.burst_threshold_dbm,
+                "modulation": self._sweep_cfg.modulation,
+            }
 
         @r.get("/live")
         def live():

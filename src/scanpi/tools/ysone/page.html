@@ -18,6 +18,28 @@
 <main>
 
   <section>
+    <h2>Band &middot; threshold
+      <span style="margin-left:12px;font-size:11px;color:var(--green-dim)">(click a band to retune)</span>
+    </h2>
+    <div class="panel" id="band-controls" style="padding:10px">
+      <div id="band-buttons" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+      <div style="display:flex;gap:14px;font-size:11px;align-items:center;flex-wrap:wrap">
+        <span class="sub">threshold dBm:</span>
+        <input id="threshold" type="number" step="5" style="background:var(--bg-panel);border:1px solid var(--border);color:var(--amber);padding:3px 8px;width:70px;font-family:inherit">
+        <span class="sub">modulation:</span>
+        <select id="modulation" style="background:var(--bg-panel);border:1px solid var(--border);color:var(--green);padding:3px 8px;font-family:inherit">
+          <option value="ask_ook">ASK/OOK</option>
+          <option value="fsk2">2-FSK</option>
+          <option value="fsk4">4-FSK</option>
+          <option value="msk">MSK</option>
+          <option value="gfsk">GFSK</option>
+        </select>
+        <button onclick="applyConfig()">apply</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h2>Spectrum — live sweep</h2>
     <div class="panel" id="spectrum" style="min-height:160px"></div>
   </section>
@@ -30,7 +52,7 @@
   <section>
     <h2>Recent bursts</h2>
     <table id="bursts">
-      <thead><tr><th>Time</th><th class="num">Freq (MHz)</th><th class="num">RSSI (dBm)</th><th>Modulation</th><th>Note</th></tr></thead>
+      <thead><tr><th>Time</th><th class="num">Freq (MHz)</th><th class="num">RSSI (dBm)</th><th>Modulation</th><th>Bytes (hex)</th><th>Guess</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -95,6 +117,41 @@ function drawHistogram(bins) {
   }).join("");
 }
 
+let currentBand = "ism-915";
+let bandPresets = {};
+
+async function loadBands() {
+  const data = await fetch("api/bands").then(r => r.json());
+  currentBand = data.current;
+  bandPresets = data.presets;
+  const div = document.getElementById("band-buttons");
+  div.innerHTML = Object.entries(bandPresets).map(([k, v]) =>
+    `<button onclick="selectBand('${k}')" class="${k===currentBand?'':'secondary'}"
+             title="${v.start_mhz}-${v.stop_mhz} MHz">${k}</button>`
+  ).join("");
+}
+
+async function selectBand(band) {
+  await fetch("api/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({band}),
+  });
+  await loadBands();
+  refresh();
+}
+
+async function applyConfig() {
+  const thr = parseFloat(document.getElementById("threshold").value);
+  const mod = document.getElementById("modulation").value;
+  await fetch("api/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({threshold_dbm: thr, modulation: mod}),
+  });
+  refresh();
+}
+
 async function refresh() {
   try {
     const [live, bursts, hist] = await Promise.all([
@@ -106,6 +163,9 @@ async function refresh() {
       live.running
         ? `${live.start_mhz}-${live.stop_mhz} MHz · ${live.sweep_count} sweeps · threshold ${live.threshold_dbm} dBm`
         : "worker stopped";
+    // Sync form fields to current values
+    const thrInp = document.getElementById("threshold");
+    if (thrInp && document.activeElement !== thrInp) thrInp.value = live.threshold_dbm;
     document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
     drawSpectrum(live);
     drawHistogram(hist.bins);
@@ -113,18 +173,25 @@ async function refresh() {
     body.innerHTML = "";
     for (const b of bursts.bursts) {
       const tr = document.createElement("tr");
+      const hex = b.bytes_hex || "";
+      const hexShow = hex.length > 40 ? hex.slice(0,40)+"…" : hex || "—";
+      const noteColor = b.note && b.note.includes("lora") ? "color:var(--amber);font-weight:600"
+                      : b.note && b.note.includes("zwave") ? "color:#c88fff;font-weight:600"
+                      : b.note ? "color:var(--green-dim)" : "color:var(--green-deep)";
       tr.innerHTML = `
         <td>${fmt.time(b.ts)}</td>
         <td class="num">${(b.freq_hz/1e6).toFixed(4)}</td>
         <td class="num">${(+b.rssi_dbm).toFixed(1)}</td>
         <td>${b.modulation || "—"}</td>
-        <td>${b.note || ""}</td>`;
+        <td style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--green)">${hexShow}</td>
+        <td style="${noteColor}">${b.note || ""}</td>`;
       body.appendChild(tr);
     }
   } catch (e) {
     document.getElementById("updated").textContent = "error: " + e;
   }
 }
+loadBands();
 refresh();
 setInterval(refresh, 2000);
 </script>
