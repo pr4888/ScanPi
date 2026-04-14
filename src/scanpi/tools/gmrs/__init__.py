@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ...tools import Tool, ToolStatus
+from ...retention import RetentionConfig, RetentionManager
 from .channels import Channel, CHANNELS_462
 from .db import GmrsDB
 from .monitor import GmrsMonitor, MonitorConfig
@@ -67,6 +68,9 @@ class GmrsTool(Tool):
         self._ch_by_num: dict[int, Channel] = {c.num: c for c in self._channels}
         self._transcriber: TranscriptionWorker | None = None
         self._transcribe_enabled = bool(cfg.get("transcribe", True))
+        self._retention: RetentionManager | None = None
+        self._max_age_days = float(cfg.get("max_age_days", 7.0))
+        self._max_total_mb = float(cfg.get("max_total_mb", 512.0))
 
     # --- lifecycle ------------------------------------------------------
 
@@ -103,27 +107,50 @@ class GmrsTool(Tool):
                 on_result=self._on_transcribe_result,
                 model_name=str(self.config.get("whisper_model", "tiny.en")),
                 model_dir=model_dir,
+                min_duration_s=float(self.config.get("whisper_min_duration_s", 0.3)),
             )
             self._transcriber.start()
 
+        self._retention = RetentionManager(
+            RetentionConfig(
+                audio_dir=self._audio_dir,
+                max_age_days=self._max_age_days,
+                max_total_mb=self._max_total_mb,
+            ),
+            on_deleted=self._on_clips_deleted,
+        )
+        self._retention.start()
+
     def stop(self) -> None:
         if self._transcriber is not None:
-            try:
-                self._transcriber.stop()
-            except Exception:
-                log.exception("transcriber stop failed")
+            try: self._transcriber.stop()
+            except Exception: log.exception("transcriber stop failed")
             self._transcriber = None
+        if self._retention is not None:
+            try: self._retention.stop()
+            except Exception: log.exception("retention stop failed")
+            self._retention = None
         if self._monitor is not None:
-            try:
-                self._monitor.stop()
-            except Exception:
-                log.exception("GMRS monitor stop failed")
+            try: self._monitor.stop()
+            except Exception: log.exception("GMRS monitor stop failed")
             self._monitor = None
         if self._db is not None:
             self._db.close()
             self._db = None
         self._open_events.clear()
         self._started_ts = None
+
+    def _on_clips_deleted(self, paths: list[str]):
+        if not self._db or not paths:
+            return
+        placeholders = ",".join("?" * len(paths))
+        try:
+            self._db.conn.execute(
+                f"UPDATE tx_events SET clip_path = NULL WHERE clip_path IN ({placeholders})",
+                paths,
+            )
+        except Exception:
+            log.exception("failed to null out deleted clip_paths in DB")
 
     def status(self) -> ToolStatus:
         running = self._monitor is not None

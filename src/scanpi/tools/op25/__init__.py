@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from ...tools import Tool, ToolStatus
+from ...retention import RetentionConfig, RetentionManager
 from ..gmrs import _serve_file_with_range  # reuse range-aware audio serving
 from ..gmrs.transcriber import TranscribeJob, TranscriptionWorker
 from .bridge import ActiveCall, OP25Bridge, BridgeConfig
@@ -56,6 +57,9 @@ class OP25Tool(Tool):
         self._bridge: OP25Bridge | None = None
         self._transcriber: TranscriptionWorker | None = None
         self._talkgroups: dict[int, dict] = {}
+        self._retention: RetentionManager | None = None
+        self._max_age_days = float(cfg.get("max_age_days", 7.0))
+        self._max_total_mb = float(cfg.get("max_total_mb", 1024.0))
 
     # --- lifecycle ------------------------------------------------------
 
@@ -101,6 +105,17 @@ class OP25Tool(Tool):
         )
         self._bridge.start()
 
+        # Audio retention / disk budget
+        self._retention = RetentionManager(
+            RetentionConfig(
+                audio_dir=self._audio_dir,
+                max_age_days=self._max_age_days,
+                max_total_mb=self._max_total_mb,
+            ),
+            on_deleted=self._on_clips_deleted,
+        )
+        self._retention.start()
+
         # Transcription — reuse GMRS worker pattern
         if bool(self.config.get("transcribe", True)):
             model_dir = Path(self.config.get(
@@ -120,6 +135,10 @@ class OP25Tool(Tool):
             try: self._transcriber.stop()
             except Exception: log.exception("transcriber stop failed")
             self._transcriber = None
+        if self._retention is not None:
+            try: self._retention.stop()
+            except Exception: log.exception("retention stop failed")
+            self._retention = None
         if self._bridge is not None:
             try: self._bridge.stop()
             except Exception: log.exception("bridge stop failed")
@@ -127,6 +146,20 @@ class OP25Tool(Tool):
         if self._db is not None:
             self._db.close()
             self._db = None
+
+    def _on_clips_deleted(self, paths: list[str]):
+        """Null out clip_path for rows whose WAV was pruned."""
+        if not self._db or not paths:
+            return
+        # SQLite IN (...) with parameter list
+        placeholders = ",".join("?" * len(paths))
+        try:
+            self._db.conn.execute(
+                f"UPDATE p25_calls SET clip_path = NULL WHERE clip_path IN ({placeholders})",
+                paths,
+            )
+        except Exception:
+            log.exception("failed to null out deleted clip_paths in DB")
 
     # --- callbacks from bridge -----------------------------------------
 
