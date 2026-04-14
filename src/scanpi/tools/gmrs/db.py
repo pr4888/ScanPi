@@ -139,6 +139,10 @@ class GmrsDB:
         ).fetchone()
         return row["t"] if row and row["t"] else None
 
+    def all_time_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) AS n FROM tx_events").fetchone()
+        return row["n"] if row else 0
+
     def hourly_activity(self, channel: int, hours: int = 24) -> list[dict]:
         since = time.time() - hours * 3600
         rows = self.conn.execute(

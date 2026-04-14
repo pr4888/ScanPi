@@ -112,14 +112,25 @@ async function render(){
     const sm = t.summary || {};
     // Big stats block — "what's this tool doing lately" at a glance
     let stats = '';
-    if (sm.running && (sm.total_tx_24h || sm.top_channel != null)) {
-      const topLabel = sm.top_channel != null
-        ? `Ch ${sm.top_channel}${sm.top_freq_mhz ? ` · ${sm.top_freq_mhz} MHz` : ''}`
-        : '—';
+    if (sm.running) {
+      // Unify GMRS + OP25 field names for display
+      const total24 = sm.total_tx_24h ?? sm.total_calls_24h ?? 0;
+      const activeN = sm.active_channels_24h ?? sm.active_tgs_24h ?? 0;
+      const activeLabel = sm.active_channels_24h != null ? "active ch" : "active TGs";
+      const allTime = sm.all_time_count ?? 0;
+      let topLabel = '—';
+      if (sm.top_channel != null) {
+        topLabel = `Ch ${sm.top_channel}${sm.top_freq_mhz ? ` · ${sm.top_freq_mhz} MHz` : ''}`;
+      } else if (sm.top_tg_name) {
+        topLabel = sm.top_tg_name;
+      } else if (sm.top_tg != null) {
+        topLabel = `TG ${sm.top_tg}`;
+      }
       stats = '<div class="stat-row">'
-        + '<div><div class="stat-big">'+(sm.total_tx_24h||0)+'</div><div class="stat-label">TX / 24h</div></div>'
-        + '<div><div class="stat-big">'+(sm.active_channels_24h||0)+'</div><div class="stat-label">active ch</div></div>'
+        + '<div><div class="stat-big">'+total24+'</div><div class="stat-label">24h</div></div>'
+        + '<div><div class="stat-big">'+activeN+'</div><div class="stat-label">'+activeLabel+'</div></div>'
         + '<div><div class="stat-big" style="font-size:14px;margin-top:4px">'+topLabel+'</div><div class="stat-label">busiest</div></div>'
+        + '<div><div class="stat-big">'+allTime+'</div><div class="stat-label">all-time</div></div>'
         + '</div>';
     }
     const lastTs = (sm && sm.last_activity_ts) || (t.status && t.status.last_activity_ts);

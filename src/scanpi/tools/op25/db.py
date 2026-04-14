@@ -130,6 +130,10 @@ class OP25DB:
         ).fetchone()
         return row["t"] if row and row["t"] else None
 
+    def all_time_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) AS n FROM p25_calls").fetchone()
+        return row["n"] if row else 0
+
     def get_call(self, call_id: int) -> dict | None:
         row = self.conn.execute(
             "SELECT * FROM p25_calls WHERE id = ?", (call_id,),

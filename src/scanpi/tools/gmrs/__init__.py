@@ -215,6 +215,7 @@ class GmrsTool(Tool):
             "preview": preview,
             "preview_tg": f"Ch {preview_ch}" if preview_ch else None,
             "preview_ts": preview_ts,
+            "all_time_count": self._db.all_time_count(),
         }
 
     # --- monitor callbacks ---------------------------------------------

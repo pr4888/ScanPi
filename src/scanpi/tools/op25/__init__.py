@@ -279,6 +279,7 @@ class OP25Tool(Tool):
             "preview_tg": preview_tg,
             "preview_ts": preview_ts,
             "alert_counts": self._db.alert_counts_24h(),
+            "all_time_count": self._db.all_time_count(),
         }
 
     # --- API ------------------------------------------------------------
