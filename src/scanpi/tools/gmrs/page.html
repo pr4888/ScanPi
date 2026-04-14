@@ -127,21 +127,43 @@ async function refresh() {
       rec.textContent = "Not enough activity yet. Let it run during daytime / evening when kids are typically on-air.";
     }
 
+    // Incremental update — never destroy rows that are already rendered
+    // (destroying them kills any <audio> element mid-playback).
     const recTbody = document.querySelector("#recent tbody");
-    recTbody.innerHTML = "";
+    const existing = new Map();
+    for (const row of recTbody.querySelectorAll("tr[data-event-id]")) {
+      existing.set(row.dataset.eventId, row);
+    }
+    const wantedIds = new Set(recent.events.map(e => String(e.id)));
+    // Remove rows for events that are no longer in the recent list.
+    for (const [id, row] of existing) {
+      if (!wantedIds.has(id)) row.remove();
+    }
+    // Add or skip rows in the correct position (newest first per API order).
+    let prev = null;
     for (const e of recent.events) {
-      const tr = document.createElement("tr");
-      const audio = e.clip_path
-        ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px"></audio>`
-        : "—";
-      tr.innerHTML = `
-        <td>${fmt.time(e.start_ts)}</td>
-        <td>Ch ${e.channel}</td>
-        <td class="num">${fmt.dur(e.duration_s)}</td>
-        <td class="num">${fmt.rssi(e.peak_rssi)}</td>
-        <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
-        <td>${audio}</td>`;
-      recTbody.appendChild(tr);
+      let tr = existing.get(String(e.id));
+      if (!tr) {
+        tr = document.createElement("tr");
+        tr.dataset.eventId = String(e.id);
+        const audio = e.clip_path
+          ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px"></audio>`
+          : "—";
+        tr.innerHTML = `
+          <td>${fmt.time(e.start_ts)}</td>
+          <td>Ch ${e.channel}</td>
+          <td class="num">${fmt.dur(e.duration_s)}</td>
+          <td class="num">${fmt.rssi(e.peak_rssi)}</td>
+          <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
+          <td>${audio}</td>`;
+      }
+      // Position it after prev (preserves server order without touching unchanged rows).
+      if (prev === null) {
+        if (recTbody.firstChild !== tr) recTbody.insertBefore(tr, recTbody.firstChild);
+      } else if (prev.nextSibling !== tr) {
+        recTbody.insertBefore(tr, prev.nextSibling);
+      }
+      prev = tr;
     }
   } catch (e) {
     document.getElementById("updated").textContent = "error: " + e;

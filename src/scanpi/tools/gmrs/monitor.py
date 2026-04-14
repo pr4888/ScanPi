@@ -41,16 +41,19 @@ class MonitorConfig:
     center_hz: int = 462_637_500
     sample_rate: int = 2_000_000
     rtl_gain: float = 40.0
-    squelch_db: float = -30.0  # ~15 dB above typical RTL-SDR UHF noise floor
+    squelch_db: float = -45.0  # well above noise floor (~-66), tolerant of dropouts
     squelch_alpha: float = 0.05
     # Edge detection
-    open_hold_s: float = 0.3
-    close_hold_s: float = 0.8
+    open_hold_s: float = 0.2   # declare OPEN this long after RSSI first exceeds threshold
+    close_hold_s: float = 0.5  # declare CLOSE this long after RSSI first drops
     poll_hz: float = 20.0
-    # Audio recording
-    audio_rate: int = 10_000  # must evenly divide channel_rate (50000/10000=5)
-    preroll_s: float = 1.5    # seconds of audio buffered before squelch opens
+    # Audio recording.  16 kHz is a standard WAV rate; browsers play it reliably.
+    # With sample_rate=2_000_000 and decim=25 → channel_rate=80_000,
+    # audio_decim = 80_000 / 16_000 = 5 (integer — required by fir_filter_fff).
+    audio_rate: int = 16_000
+    preroll_s: float = 0.3    # seconds of audio buffered before squelch opens
     max_record_s: float = 120  # safety cap on any single TX
+    audio_gain: float = 3.0   # post-demod gain to fill int16 range for typical voice
 
 
 class AudioRecorder(gr.sync_block):
@@ -60,13 +63,15 @@ class AudioRecorder(gr.sync_block):
     while work() runs in the GR scheduler thread. Guarded by a mutex.
     """
 
-    def __init__(self, channel_num: int, sample_rate: int, preroll_samples: int):
+    def __init__(self, channel_num: int, sample_rate: int, preroll_samples: int,
+                 audio_gain: float = 1.0):
         gr.sync_block.__init__(
             self, name=f"ch{channel_num}_rec",
             in_sig=[np.float32], out_sig=None,
         )
         self._ch = channel_num
         self._rate = sample_rate
+        self._gain = audio_gain
         self._buf = collections.deque(maxlen=preroll_samples)
         self._lock = threading.Lock()
         self._wav: wave.Wave_write | None = None
@@ -75,12 +80,14 @@ class AudioRecorder(gr.sync_block):
 
     def work(self, input_items, output_items):
         samples = input_items[0]
+        # Post-demod gain + hard clip to int16 range.
+        boosted = np.clip(samples * self._gain, -1.0, 1.0)
         with self._lock:
             if self._wav is not None:
-                self._wav.writeframes((samples * 32000).astype(np.int16).tobytes())
+                self._wav.writeframes((boosted * 24000).astype(np.int16).tobytes())
                 self._samples_written += len(samples)
             else:
-                self._buf.extend(samples)
+                self._buf.extend(boosted)
         return len(samples)
 
     def start_record(self, path: str) -> str:
@@ -95,7 +102,8 @@ class AudioRecorder(gr.sync_block):
             self._wav.setframerate(self._rate)
             if self._buf:
                 pre = np.fromiter(self._buf, dtype=np.float32, count=len(self._buf))
-                self._wav.writeframes((pre * 32000).astype(np.int16).tobytes())
+                # Buffer is already clipped in work(); scale consistent with main path.
+                self._wav.writeframes((pre * 24000).astype(np.int16).tobytes())
                 self._buf.clear()
             self._path = path
             self._samples_written = 0
@@ -127,34 +135,53 @@ class GmrsFlowgraph(gr.top_block):
         src.set_bandwidth(cfg.sample_rate)
         self.src = src
 
-        decim = 40
-        channel_rate = cfg.sample_rate // decim  # 50 kHz
+        decim = 25  # 2 Msps / 25 = 80 kHz channel rate (→ clean divide to 16 kHz audio)
+        channel_rate = cfg.sample_rate // decim  # 80 kHz
         audio_rate = cfg.audio_rate
 
-        ch_taps = firdes.low_pass(1.0, cfg.sample_rate, 6_250, 2_000)
+        import math
+        from gnuradio.analog import fm_emph
+
+        # Channel filter: ±8 kHz passband.
+        # GMRS max deviation 5 kHz + voice to 3 kHz → Carson's rule BW ≈ 16 kHz.
+        ch_taps = firdes.low_pass(1.0, cfg.sample_rate, 8_000, 3_000)
+        # Audio low-pass: ~3.4 kHz (voice) at channel_rate; then decimate to audio_rate.
+        audio_decim = channel_rate // audio_rate
+        audio_taps = firdes.low_pass(1.0, channel_rate, 3_400, 1_500)
+        # Quadrature demod gain: normalizes output to ±1 for ±max_dev input.
+        # FRS/GMRS narrowband max deviation is 2.5 kHz (not 5 kHz), so setting
+        # max_dev here gives proper voice amplitude scaling.
+        max_dev = 2_500.0
+        quad_gain = channel_rate / (2.0 * math.pi * max_dev)
         preroll_samples = int(cfg.preroll_s * audio_rate)
 
         self.probes: dict[int, analog.probe_avg_mag_sqrd_c] = {}
         self.recorders: dict[int, AudioRecorder] = {}
 
+        # Per-channel manual FM chain:
+        #   xlate → quadrature_demod → audio_lowpass+decim → de-emphasis → recorder
+        # (Replaces analog.nbfm_rx which has a +20 dB internal squelch that never
+        # opens on RTL-SDR-normalized signals, causing silence-only output.)
         for ch in channels:
             offset = ch.freq_hz - cfg.center_hz
             xlate = gr_filter.freq_xlating_fir_filter_ccc(
                 decim, ch_taps, offset, cfg.sample_rate,
             )
-            # Squelch kept optional (set very low — we use the probe for edge detect)
-            squelch = analog.pwr_squelch_cc(-120.0, cfg.squelch_alpha, 0, False)
-            fm = analog.nbfm_rx(
-                audio_rate=audio_rate,
-                quad_rate=channel_rate,
-                tau=75e-6,
-                max_dev=5_000,
-            )
             probe = analog.probe_avg_mag_sqrd_c(cfg.squelch_db - 5.0, 0.05)
-            recorder = AudioRecorder(ch.num, audio_rate, preroll_samples)
+            # Power squelch gates the audio: below squelch_db it outputs zeros
+            # (gate=False), so pre-roll and close-hold windows stay silent
+            # instead of recording loud demodulated noise.
+            audio_squelch = analog.pwr_squelch_cc(
+                cfg.squelch_db, cfg.squelch_alpha, 0, False,
+            )
+            quad_demod = analog.quadrature_demod_cf(quad_gain)
+            audio_lpf = gr_filter.fir_filter_fff(audio_decim, audio_taps)
+            deemph = fm_emph.fm_deemph(audio_rate, tau=75e-6)
+            recorder = AudioRecorder(ch.num, audio_rate, preroll_samples,
+                                      audio_gain=cfg.audio_gain)
 
             self.connect(src, xlate, probe)
-            self.connect(xlate, squelch, fm, recorder)
+            self.connect(xlate, audio_squelch, quad_demod, audio_lpf, deemph, recorder)
 
             self.probes[ch.num] = probe
             self.recorders[ch.num] = recorder
@@ -233,14 +260,18 @@ class GmrsMonitor:
                     if st["above_since"] is None:
                         st["above_since"] = now
                     elif (now - st["above_since"]) >= self.cfg.open_hold_s:
+                        # Use the time the signal FIRST went above threshold, not now.
+                        true_open = st["above_since"]
                         st["open"] = True
-                        st["opened_at"] = now
+                        st["opened_at"] = true_open
                         st["above_since"] = None
                         try:
-                            self._on_open(ch, now, rssi_db)
+                            self._on_open(ch, true_open, rssi_db)
                         except Exception:
                             log.exception("on_open handler failed")
                 elif above and st["open"]:
+                    if st["below_since"] is not None:
+                        log.debug("ch=%d: rssi recovered to %.1f dBFS, below-timer reset", ch_num, rssi_db)
                     st["below_since"] = None
                     try:
                         self._on_rssi(ch, rssi_db)
@@ -259,12 +290,16 @@ class GmrsMonitor:
                     st["above_since"] = None
                     if st["below_since"] is None:
                         st["below_since"] = now
+                        log.debug("ch=%d: rssi dropped to %.1f dBFS, below-timer started", ch_num, rssi_db)
                     elif (now - st["below_since"]) >= self.cfg.close_hold_s:
+                        # Use the time the signal FIRST dropped, not now. This makes
+                        # reported duration reflect true TX window.
+                        true_close = st["below_since"]
                         st["open"] = False
                         st["opened_at"] = None
                         st["below_since"] = None
                         try:
-                            self._on_close(ch, now)
+                            self._on_close(ch, true_close)
                         except Exception:
                             log.exception("on_close handler failed")
                 else:

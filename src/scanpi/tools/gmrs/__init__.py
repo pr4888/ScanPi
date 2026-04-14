@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ...tools import Tool, ToolStatus
 from .channels import Channel, CHANNELS_462
@@ -51,7 +51,7 @@ class GmrsTool(Tool):
         self._monitor_cfg = MonitorConfig(
             center_hz=int(cfg.get("center_hz", 462_637_500)),
             sample_rate=int(cfg.get("sample_rate", 2_000_000)),
-            rtl_gain=float(cfg.get("gain", 40.0)),
+            rtl_gain=float(cfg.get("gain", 10.0)),
             squelch_db=float(cfg.get("squelch_db", -30.0)),
             preroll_s=float(cfg.get("preroll_s", 1.5)),
             max_record_s=float(cfg.get("max_record_s", 120.0)),
@@ -224,7 +224,7 @@ class GmrsTool(Tool):
             return {"events": self._db.recent_events(limit)}
 
         @r.get("/clip/{event_id}")
-        def clip(event_id: int):
+        def clip(event_id: int, request: Request):
             if not self._db:
                 raise HTTPException(404, "db offline")
             row = self._db.conn.execute(
@@ -232,10 +232,63 @@ class GmrsTool(Tool):
             ).fetchone()
             if not row or not row["clip_path"] or not os.path.exists(row["clip_path"]):
                 raise HTTPException(404, "clip not found")
-            return FileResponse(row["clip_path"], media_type="audio/wav",
-                                filename=Path(row["clip_path"]).name)
+            return _serve_file_with_range(row["clip_path"], "audio/wav", request)
 
         return r
 
     def page_html(self) -> str:
         return (Path(__file__).parent / "page.html").read_text(encoding="utf-8")
+
+
+def _serve_file_with_range(path: str, media_type: str, request):
+    """Serve a file with HTTP Range support, using a simple in-memory Response.
+
+    Reads the whole file once (WAV clips are tens to hundreds of KB — fine for
+    RAM), then returns either the full bytes or a sliced range. Avoids any
+    generator/streaming edge cases that caused inconsistent playback.
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+    file_size = len(data)
+
+    range_header = request.headers.get("range")
+    if not range_header:
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            },
+        )
+
+    # Parse "bytes=START-END" (either side may be empty per RFC 7233).
+    try:
+        units, rng = range_header.split("=", 1)
+        start_s, end_s = rng.split("-", 1)
+        if start_s == "" and end_s != "":
+            # Suffix form: "-N" = last N bytes.
+            length = int(end_s)
+            start = max(0, file_size - length)
+            end = file_size - 1
+        else:
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else file_size - 1
+    except Exception:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
+    if start >= file_size or end >= file_size or start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
+    length = end - start + 1
+
+    return Response(
+        content=data[start:end + 1],
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(length),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        },
+    )
