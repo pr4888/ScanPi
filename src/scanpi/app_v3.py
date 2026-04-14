@@ -360,8 +360,24 @@ def run_v3(host: str = "0.0.0.0", port: int = 8080,
     data_dir.mkdir(parents=True, exist_ok=True)
 
     registry = ToolRegistry()
-    registry.register(GmrsTool(config={"data_dir": str(data_dir)}))
-    registry.register(OP25Tool(config={"data_dir": str(data_dir)}))
+    # Pin each RTL-SDR tool to a specific stick by serial so coordinator
+    # treats them as distinct devices (→ parallel operation).
+    # If the user has only one RTL-SDR, the 'rtl=serial=XXX' arg still works
+    # when the serial matches the sole device; it falls back to rtl=0 if
+    # we override via env SCANPI_GMRS_SDR / SCANPI_OP25_SDR / etc.
+    import os as _os
+    gmrs_sdr = _os.environ.get("SCANPI_GMRS_SDR", "numchan=1 rtl=00000001")
+    op25_config = _os.environ.get("SCANPI_OP25_CONFIG", "clmrn_cfg_sdr1.json")
+    registry.register(GmrsTool(config={
+        "data_dir": str(data_dir),
+        "sdr_args": gmrs_sdr,
+        "sdr_device": 0,
+    }))
+    registry.register(OP25Tool(config={
+        "data_dir": str(data_dir),
+        "op25_config": op25_config,
+        "sdr_device": 1,   # different device_index → runs in parallel with GMRS
+    }))
     # YS1 is on its own USB device (sdr_device=100) → coordinator treats
     # it as a separate radio, runs in parallel with an RTL-SDR tool.
     try:

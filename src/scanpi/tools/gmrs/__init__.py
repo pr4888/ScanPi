@@ -59,6 +59,7 @@ class GmrsTool(Tool):
             squelch_db=float(cfg.get("squelch_db", -30.0)),
             preroll_s=float(cfg.get("preroll_s", 1.5)),
             max_record_s=float(cfg.get("max_record_s", 120.0)),
+            sdr_args=str(cfg.get("sdr_args", "numchan=1 rtl=0")),
         )
         self._channels: list[Channel] = list(CHANNELS_462)
         # Open DB immediately so historical reads work before/after start().

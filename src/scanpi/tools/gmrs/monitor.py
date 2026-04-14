@@ -41,6 +41,10 @@ class MonitorConfig:
     center_hz: int = 462_637_500
     sample_rate: int = 2_000_000
     rtl_gain: float = 40.0
+    # gr-osmosdr device selector. Examples:
+    #   "rtl=0"                   → first RTL-SDR enumerated
+    #   "rtl=serial=00000001"    → specific stick (stable across reboots/replugs)
+    sdr_args: str = "numchan=1 rtl=0"
     squelch_db: float = -45.0  # well above noise floor (~-66), tolerant of dropouts
     squelch_alpha: float = 0.05
     # Edge detection
@@ -127,7 +131,7 @@ class GmrsFlowgraph(gr.top_block):
         self.channels = channels
         self.cfg = cfg
 
-        src = osmosdr.source(args="numchan=1 rtl=0")
+        src = osmosdr.source(args=cfg.sdr_args)
         src.set_sample_rate(cfg.sample_rate)
         src.set_center_freq(cfg.center_hz)
         src.set_gain_mode(False)
