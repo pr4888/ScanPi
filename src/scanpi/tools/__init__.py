@@ -45,6 +45,14 @@ class Tool(ABC):
     def __init__(self, config: dict | None = None):
         self.config = config or {}
 
+    @property
+    def sdr_device_index(self) -> int:
+        """Which RTL-SDR device this tool wants. Tools with different indexes
+        can run concurrently; tools sharing an index are arbitrated by the
+        coordinator. Defaults to 0 (the sole SDR on most systems).
+        """
+        return int(self.config.get("sdr_device", 0))
+
     @abstractmethod
     def start(self) -> None:
         """Spin up the backend (flowgraph, threads, workers)."""
