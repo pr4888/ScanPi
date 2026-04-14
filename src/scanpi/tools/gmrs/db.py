@@ -134,3 +134,27 @@ class GmrsDB:
             (since, channel, since),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def hourly_all(self, hours: int = 24) -> list[dict]:
+        """Hourly activity across all channels (for sparkline)."""
+        since = time.time() - hours * 3600
+        rows = self.conn.execute(
+            "SELECT CAST((start_ts - ?) / 3600 AS INTEGER) AS hour_bucket, "
+            "COUNT(*) AS tx_count, COALESCE(SUM(duration_s), 0) AS airtime_s "
+            "FROM tx_events WHERE end_ts IS NOT NULL AND start_ts >= ? "
+            "GROUP BY hour_bucket ORDER BY hour_bucket",
+            (since, since),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_event(self, event_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM tx_events WHERE id = ?", (event_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def all_events(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM tx_events ORDER BY start_ts DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]

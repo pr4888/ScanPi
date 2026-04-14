@@ -161,15 +161,29 @@ class OP25Tool(Tool):
     def status(self) -> ToolStatus:
         running = self._bridge is not None
         last = self._db.last_call_end_ts() if self._db else None
+        healthy = True
         if running and self._bridge:
             snap = self._bridge.snapshot()
-            msg = f"active calls: {len(snap['active_calls'])}"
-            if snap.get("cc_freq_mhz"):
-                msg += f" · cc {snap['cc_freq_mhz']:.5f} MHz"
+            # Health: decoder running + recent activity (or just started)
+            if not snap.get("running"):
+                healthy = False
+                msg = "decoder died — watchdog will respawn"
+            else:
+                msg = f"active calls: {len(snap['active_calls'])}"
+                if snap.get("cc_freq_mhz"):
+                    msg += f" · cc {snap['cc_freq_mhz']:.5f} MHz"
+                started = snap.get("started_at") or time.time()
+                uptime = time.time() - started
+                # Warn if no calls in 15m AND uptime >15m (i.e., past warmup)
+                if uptime > 900 and (not last or time.time() - last > 900):
+                    healthy = False
+                    msg += " · ⚠ no calls in 15m (check signal?)"
+                if snap.get("restart_count", 0) > 0:
+                    msg += f" · restarts: {snap['restart_count']}"
         else:
             msg = "stopped"
         return ToolStatus(
-            running=running, healthy=True,
+            running=running, healthy=healthy,
             last_activity_ts=last,
             message=msg,
             extra={"op25_dir": str(self._op25_dir), "config": self._config_json,
@@ -247,6 +261,52 @@ class OP25Tool(Tool):
             if not row or not row["clip_path"] or not os.path.exists(row["clip_path"]):
                 raise HTTPException(404, "clip not found")
             return _serve_file_with_range(row["clip_path"], "audio/wav", request)
+
+        @r.get("/call/{call_id}")
+        def call_detail(call_id: int):
+            if not self._db:
+                raise HTTPException(404, "db offline")
+            c = self._db.get_call(call_id)
+            if not c:
+                raise HTTPException(404, "call not found")
+            # Related recent calls on the same TG (for context)
+            related = self._db.conn.execute(
+                "SELECT id, start_ts, duration_s, transcript, transcript_status "
+                "FROM p25_calls WHERE tgid = ? AND id != ? "
+                "ORDER BY start_ts DESC LIMIT 10",
+                (c["tgid"], call_id),
+            ).fetchall()
+            c["related"] = [dict(r) for r in related]
+            return c
+
+        @r.get("/hourly")
+        def hourly(hours: int = 24):
+            if not self._db:
+                return {"hours": hours, "buckets": []}
+            return {"hours": hours, "buckets": self._db.hourly_activity(hours=hours)}
+
+        @r.get("/export.csv")
+        def export_csv():
+            import csv
+            import io
+            from fastapi.responses import Response as _R
+            if not self._db:
+                raise HTTPException(503, "db offline")
+            rows = self._db.all_calls()
+            fields = ["id", "tgid", "tg_name", "category", "rid", "freq_mhz",
+                       "start_ts", "end_ts", "duration_s",
+                       "clip_path", "transcript", "transcript_status"]
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            for row in rows:
+                w.writerow({k: row.get(k, "") for k in fields})
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            return _R(
+                content=buf.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="op25_calls_{ts}.csv"'},
+            )
 
         return r
 

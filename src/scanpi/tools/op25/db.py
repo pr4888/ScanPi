@@ -98,3 +98,30 @@ class OP25DB:
             "SELECT MAX(end_ts) AS t FROM p25_calls WHERE end_ts IS NOT NULL"
         ).fetchone()
         return row["t"] if row and row["t"] else None
+
+    def get_call(self, call_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM p25_calls WHERE id = ?", (call_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def hourly_activity(self, hours: int = 24) -> list[dict]:
+        """Return [{hour_bucket: int, call_count: int, airtime_s: float}, ...]
+        hour_bucket 0 = (hours) ago, bucket hours-1 = now-ish.
+        """
+        import time as _t
+        since = _t.time() - hours * 3600
+        rows = self.conn.execute(
+            "SELECT CAST((start_ts - ?) / 3600 AS INTEGER) AS hour_bucket, "
+            "COUNT(*) AS call_count, COALESCE(SUM(duration_s), 0) AS airtime_s "
+            "FROM p25_calls WHERE end_ts IS NOT NULL AND start_ts >= ? "
+            "GROUP BY hour_bucket ORDER BY hour_bucket",
+            (since, since),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def all_calls(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM p25_calls ORDER BY start_ts DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]

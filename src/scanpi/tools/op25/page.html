@@ -20,7 +20,14 @@
   <div class="recommend" id="active">No active calls.</div>
 
   <section>
-    <h2>Talkgroup activity (last 24h)</h2>
+    <h2>Activity — last 24h
+      <a href="api/export.csv" style="margin-left:12px;font-size:11px">[export CSV]</a>
+    </h2>
+    <div id="spark" style="background:var(--bg-panel);border:1px solid var(--border);padding:8px;margin-bottom:10px"></div>
+  </section>
+
+  <section>
+    <h2>Talkgroups (last 24h)</h2>
     <table id="stats">
       <thead><tr><th>TGID</th><th>Name</th><th>Category</th><th class="num">Calls</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last</th></tr></thead>
       <tbody></tbody>
@@ -71,13 +78,44 @@ function transcriptCell(e) {
   return `<span class="transcript empty">${st}</span>`;
 }
 
+function renderSpark(buckets, hours) {
+  const spark = document.getElementById("spark");
+  const w = Math.max(400, spark.clientWidth - 20), h = 50, pad = 4;
+  const arr = new Array(hours).fill(0);
+  let max = 1;
+  for (const b of buckets) {
+    const idx = b.hour_bucket;
+    if (idx >= 0 && idx < hours) {
+      arr[idx] = b.call_count;
+      if (b.call_count > max) max = b.call_count;
+    }
+  }
+  const bw = (w - pad*2) / hours;
+  let bars = "";
+  for (let i = 0; i < hours; i++) {
+    const bh = arr[i] ? Math.max(2, (arr[i] / max) * (h - pad*2 - 12)) : 1;
+    const x = pad + i * bw;
+    const y = h - pad - bh;
+    const col = arr[i] ? "#6fff9d" : "#164c32";
+    bars += `<rect x="${x+0.5}" y="${y}" width="${Math.max(1, bw-1)}" height="${bh}" fill="${col}" />`;
+    // Tick labels every 6h
+    if (i % 6 === 0) {
+      bars += `<text x="${x+1}" y="${h-1}" fill="#2e8d5a" font-size="8">-${hours-i}h</text>`;
+    }
+  }
+  bars += `<text x="${w-pad-80}" y="10" fill="#ffb347" font-size="9">peak ${max} calls/hr</text>`;
+  spark.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${bars}</svg>`;
+}
+
 async function refresh() {
   try {
-    const [live, stats, recent] = await Promise.all([
+    const [live, stats, recent, hourly] = await Promise.all([
       fetch("api/live").then(r => r.json()),
       fetch("api/stats?hours=24").then(r => r.json()),
       fetch("api/recent?limit=50").then(r => r.json()),
+      fetch("api/hourly?hours=24").then(r => r.json()),
     ]);
+    renderSpark(hourly.buckets || [], hourly.hours || 24);
 
     document.getElementById("meta").textContent =
       live.running

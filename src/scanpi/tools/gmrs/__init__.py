@@ -127,18 +127,27 @@ class GmrsTool(Tool):
 
     def status(self) -> ToolStatus:
         running = self._monitor is not None
-        # Prefer DB's last-end timestamp — survives restarts where in-memory
-        # state is reset but disk still has the history.
         last = None
         if self._db is not None:
             last_in_mem = max((s.last_event_ts for s in self._live.values()), default=0)
             last_db = self._db.last_event_end_ts()
             last = max(filter(None, [last_in_mem if last_in_mem > 0 else None, last_db]),
                        default=None)
+        healthy = True
+        if running:
+            msg = f"{len(self._channels)} channels @ {self._monitor_cfg.center_hz/1e6:.4f} MHz"
+            started = self._started_ts or time.time()
+            uptime = time.time() - started
+            # GMRS is bursty — only warn after 2h with no activity (if past warmup)
+            if uptime > 7200 and (not last or time.time() - last > 7200):
+                healthy = False
+                msg += " · ⚠ no TX in 2h"
+        else:
+            msg = "stopped"
         return ToolStatus(
-            running=running, healthy=True,
+            running=running, healthy=healthy,
             last_activity_ts=last,
-            message=f"{len(self._channels)} channels @ {self._monitor_cfg.center_hz/1e6:.4f} MHz" if running else "stopped",
+            message=msg,
             extra={"channels": len(self._channels),
                    "squelch_db": self._monitor_cfg.squelch_db,
                    "started_ts": self._started_ts},
@@ -302,6 +311,50 @@ class GmrsTool(Tool):
             if not row or not row["clip_path"] or not os.path.exists(row["clip_path"]):
                 raise HTTPException(404, "clip not found")
             return _serve_file_with_range(row["clip_path"], "audio/wav", request)
+
+        @r.get("/event/{event_id}")
+        def event_detail(event_id: int):
+            if not self._db:
+                raise HTTPException(404, "db offline")
+            e = self._db.get_event(event_id)
+            if not e:
+                raise HTTPException(404, "event not found")
+            related = self._db.conn.execute(
+                "SELECT id, start_ts, duration_s, peak_rssi, transcript, transcript_status "
+                "FROM tx_events WHERE channel = ? AND id != ? "
+                "ORDER BY start_ts DESC LIMIT 10",
+                (e["channel"], event_id),
+            ).fetchall()
+            e["related"] = [dict(r) for r in related]
+            return e
+
+        @r.get("/hourly")
+        def hourly(hours: int = 24):
+            if not self._db:
+                return {"hours": hours, "buckets": []}
+            return {"hours": hours, "buckets": self._db.hourly_all(hours=hours)}
+
+        @r.get("/export.csv")
+        def export_csv():
+            import csv as _csv, io as _io
+            from fastapi.responses import Response as _R
+            if not self._db:
+                raise HTTPException(503, "db offline")
+            rows = self._db.all_events()
+            fields = ["id", "channel", "freq_hz", "start_ts", "end_ts", "duration_s",
+                      "peak_rssi", "avg_rssi", "ctcss_hz", "ctcss_code",
+                      "clip_path", "transcript", "transcript_status"]
+            buf = _io.StringIO()
+            w = _csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            for r_ in rows:
+                w.writerow({k: r_.get(k, "") for k in fields})
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            return _R(
+                content=buf.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="gmrs_events_{ts}.csv"'},
+            )
 
         return r
 

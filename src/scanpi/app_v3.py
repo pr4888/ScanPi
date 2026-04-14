@@ -83,8 +83,9 @@ async function render(){
     card.className = "card";
     const isActive = sdr.active === t.id;
     const running = t.status && t.status.running;
-    const tagClass = running ? "running" : "stopped";
-    const tagText = running ? "running" : "stopped";
+    const healthy = t.status && t.status.healthy !== false;
+    const tagClass = !healthy ? "active" : (running ? "running" : "stopped");
+    const tagText = !healthy ? "warn" : (running ? "running" : "stopped");
     const activeTag = isActive ? '<span class="tag active">SDR-active</span>' : '';
     const sdrBadge = t.needs_sdr ? ' <span style="color:var(--warn);font-size:11px">needs SDR</span>' : '';
     let controls = '';
