@@ -164,6 +164,8 @@ async function refresh() {
     for (const s of stats.channels) {
       const tr = document.createElement("tr");
       const hot = top && s.channel === top.channel ? "hot" : "";
+      tr.classList.add("expandable");
+      tr.title = `click to filter Recent to Ch ${s.channel}`;
       tr.innerHTML = `
         <td>${chTag(s.channel)}</td>
         <td class="num ${hot}">${s.tx_count}</td>
@@ -171,6 +173,13 @@ async function refresh() {
         <td class="num">${fmt.dur(s.avg_duration_s)}</td>
         <td>${fmt.ago(s.last_active)}</td>
         <td class="num">${fmt.rssi(s.avg_peak_rssi)}</td>`;
+      tr.addEventListener("click", () => {
+        if (searchAll) {
+          searchAll.value = String(s.channel);
+          searchAll.dispatchEvent(new Event("input"));
+          document.getElementById("recent").scrollIntoView({behavior:"smooth"});
+        }
+      });
       statsTbody.appendChild(tr);
     }
 

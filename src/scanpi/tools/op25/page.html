@@ -175,6 +175,8 @@ async function refresh() {
     st.innerHTML = "";
     for (const t of stats.talkgroups) {
       const tr = document.createElement("tr");
+      tr.classList.add("expandable");
+      tr.title = `click to filter Recent to TG ${t.tgid}`;
       tr.innerHTML = `
         <td>${t.tgid}</td>
         <td>${t.tg_name || ""}</td>
@@ -183,6 +185,11 @@ async function refresh() {
         <td class="num">${fmt.dur(t.total_airtime_s)}</td>
         <td class="num">${fmt.dur(t.avg_duration_s)}</td>
         <td>${fmt.ago(t.last_active)}</td>`;
+      tr.addEventListener("click", () => {
+        searchAll.value = t.tg_name || String(t.tgid);
+        searchAll.dispatchEvent(new Event("input"));
+        document.getElementById("recent").scrollIntoView({behavior:"smooth"});
+      });
       st.appendChild(tr);
     }
 

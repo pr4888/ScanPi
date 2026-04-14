@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi :: Settings</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; Settings</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+
+  <section>
+    <h2>System</h2>
+    <div class="card">
+      <div class="settings-grid" id="system-grid">loading…</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tools</h2>
+    <div id="tools-wrap">loading…</div>
+  </section>
+
+  <section>
+    <h2>Edit config</h2>
+    <div class="card">
+      <div class="desc">
+        Runtime values above are read-only at the moment. To change them,
+        edit the tool config and restart the service:
+        <pre style="background:var(--bg);padding:8px;border:1px dashed var(--border);font-size:11px;color:var(--green);overflow-x:auto">
+# edit config (example — advanced users):
+sudo journalctl -u scanpi.service -n 20
+sudo systemctl edit scanpi.service        # inject Environment= overrides
+sudo systemctl restart scanpi.service</pre>
+        A future release will let you change gain / squelch / retention
+        budget from this page directly. For now the values below update
+        live from /api/tools so you can confirm what the daemon loaded.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const fmtAgo = ts => { if(!ts) return "never"; const a=Date.now()/1000-(+ts); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; };
+const fmtBytes = mb => mb<1 ? (mb*1024).toFixed(0)+" KB" : mb<1024 ? mb.toFixed(1)+" MB" : (mb/1024).toFixed(2)+" GB";
+
+async function refresh(){
+  document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  try {
+    const [tools, health] = await Promise.all([
+      fetch("/api/tools").then(r => r.json()),
+      fetch("/api/health").then(r => r.json()),
+    ]);
+    // System panel
+    const sysGrid = document.getElementById("system-grid");
+    sysGrid.innerHTML = `
+      <span class="k">version</span><span class="v">v0.3 tool-framework</span>
+      <span class="k">active SDR tool</span><span class="v">${health.active_sdr || "(none)"}</span>
+      <span class="k">tools loaded</span><span class="v">${(health.tools || []).join(", ") || "none"}</span>
+      <span class="k">server</span><span class="v">${window.location.origin}</span>
+    `;
+    // Tools panels
+    const wrap = document.getElementById("tools-wrap");
+    wrap.innerHTML = "";
+    for (const t of tools.tools) {
+      const card = document.createElement("div");
+      card.className = "card";
+      const ex = (t.status && t.status.extra) || {};
+      const started = ex.started_ts ? fmtAgo(ex.started_ts) : "—";
+      const rows = [
+        ["id", t.id],
+        ["name", t.name],
+        ["needs SDR", t.needs_sdr ? "yes" : "no"],
+        ["running", (t.status && t.status.running) ? "yes" : "no"],
+        ["healthy", (t.status && t.status.healthy !== false) ? "yes" : "⚠ warn"],
+        ["message", t.status ? t.status.message : "—"],
+        ["started", started],
+      ];
+      for (const [k,v] of Object.entries(ex)) {
+        if (k === "started_ts") continue;
+        rows.push(["· " + k, String(v)]);
+      }
+      const grid = rows.map(([k,v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+      card.innerHTML = `<h3>${t.name} <span class="tag ${(t.status && t.status.running) ? "running" : "stopped"}">${(t.status && t.status.running) ? "running" : "stopped"}</span></h3>
+        <div class="settings-grid">${grid}</div>`;
+      wrap.appendChild(card);
+    }
+  } catch (e) {
+    document.getElementById("updated").textContent = "error: " + e;
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

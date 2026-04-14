@@ -327,3 +327,30 @@ tr.detail .related a { color: var(--amber); margin: 0 6px; }
   width: 240px;
 }
 .search-box:focus { outline: none; border-color: var(--amber); }
+
+/* Settings page */
+.settings-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; font-size: 12px; }
+.settings-grid .k { color: var(--green-dim); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; padding-top: 3px; }
+.settings-grid .v { color: var(--amber); font-variant-numeric: tabular-nums; word-break: break-word; }
+
+/* Mobile / small-screen adjustments */
+@media (max-width: 700px) {
+  header { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  header h1 { font-size: 13px; }
+  nav { gap: 2px; width: 100%; order: 3; }
+  nav a { padding: 4px 8px; font-size: 11px; }
+  main { padding: 10px; }
+  .grid { grid-template-columns: 1fr; }
+  .card { padding: 10px 12px; }
+  .stat-row { gap: 10px; flex-wrap: wrap; }
+  .stat-row .stat-big { font-size: 18px; }
+  .last-line { font-size: 11px; padding: 6px 10px; }
+  h2 { font-size: 11px; }
+  table { font-size: 11px; }
+  th, td { padding: 5px 6px; }
+  /* Hide less-critical columns on narrow screens */
+  #recent th:nth-child(6), #recent td:nth-child(6) { display: none; } /* freq / subtone */
+  #stats th:nth-child(5), #stats td:nth-child(5) { display: none; }   /* avg dur */
+  .search-box { width: 100% !important; margin: 4px 0 !important; }
+  audio { max-width: 180px; }
+}

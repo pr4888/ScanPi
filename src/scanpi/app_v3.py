@@ -46,11 +46,14 @@ async function loadNav(){
   const data = await r.json();
   const here = window.location.pathname;
   const nav = document.getElementById("nav");
-  nav.innerHTML = '<a href="/" class="'+(here==="/"?"active":"")+'">dashboard</a>' +
+  const dashClass = here === "/" ? "active" : "";
+  const settingsClass = here === "/settings" ? "active" : "";
+  nav.innerHTML = '<a href="/" class="'+dashClass+'">dashboard</a>' +
     data.tools.map(t => {
       const active = here.startsWith("/tools/"+t.id);
       return '<a href="/tools/'+t.id+'/" class="'+(active?"active":"")+'">'+t.name+'</a>';
-    }).join("");
+    }).join("") +
+    '<a href="/settings" class="'+settingsClass+'">settings</a>';
 }
 loadNav();
 </script>
@@ -167,6 +170,13 @@ def create_app(registry: ToolRegistry, coordinator: SdrCoordinator) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def dashboard():
         return _render_shell("Dashboard", DASHBOARD_BODY)
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings():
+        f = static_dir / "settings.html"
+        if f.exists():
+            return f.read_text(encoding="utf-8")
+        raise HTTPException(404)
 
     @app.get("/api/tools")
     def list_tools():
