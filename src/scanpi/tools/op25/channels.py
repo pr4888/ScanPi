@@ -7,8 +7,9 @@ from pathlib import Path
 def load_talkgroups(tsv_path: Path) -> dict[int, dict]:
     """Parse an OP25 talkgroup TSV into {tgid: {"name": str, "category": str, ...}}.
 
-    Format: first column is tgid, second is tag/name, optional extra columns
-    for category / priority / hint. Commented (#) and blank lines are skipped.
+    OP25 standard TSV format: tgid<TAB>name<TAB>priority. Category is not
+    present in the file — we infer it from the name via `classify()`.
+    Commented (#) and blank lines are skipped.
     """
     tgs: dict[int, dict] = {}
     if not tsv_path.exists():
@@ -24,9 +25,11 @@ def load_talkgroups(tsv_path: Path) -> dict[int, dict]:
         except ValueError:
             continue
         name = parts[1].strip() or f"TG-{tgid}"
-        cat = parts[2].strip().lower() if len(parts) > 2 else ""
-        prio = int(parts[3]) if len(parts) > 3 and parts[3].strip().isdigit() else 0
-        tgs[tgid] = {"tgid": tgid, "name": name, "category": cat, "priority": prio}
+        prio = 0
+        if len(parts) > 2 and parts[2].strip().isdigit():
+            prio = int(parts[2].strip())
+        category = classify(name)
+        tgs[tgid] = {"tgid": tgid, "name": name, "category": category, "priority": prio}
     return tgs
 
 

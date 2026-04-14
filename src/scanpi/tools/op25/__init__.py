@@ -76,6 +76,24 @@ class OP25Tool(Tool):
         self._talkgroups = load_talkgroups(tg_path)
         log.info("loaded %d talkgroups from %s", len(self._talkgroups), tg_path)
 
+        # Migration: earlier versions wrote priority ('1','2',...) into the
+        # category column. Re-classify any rows whose category is a plain
+        # number or empty using the current tg_name + classifier.
+        bad = self._db.conn.execute(
+            "SELECT id, tgid, tg_name, category FROM p25_calls "
+            "WHERE category IS NULL OR category = '' OR category GLOB '[0-9]*'"
+        ).fetchall()
+        if bad:
+            for row in bad:
+                name = row["tg_name"] or ""
+                tg = self._talkgroups.get(row["tgid"])
+                new_cat = (tg or {}).get("category") or classify(name)
+                self._db.conn.execute(
+                    "UPDATE p25_calls SET category = ? WHERE id = ?",
+                    (new_cat, row["id"]),
+                )
+            log.info("re-classified %d legacy rows with bad category", len(bad))
+
         self._bridge = OP25Bridge(
             self._bridge_cfg,
             on_call_open=self._open_call,

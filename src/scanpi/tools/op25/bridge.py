@@ -25,6 +25,10 @@ log = logging.getLogger(__name__)
 VOICE_RE = re.compile(
     r'voice update:\s+tg\((\d+)\),\s+rid\((\d+)\),\s+freq\(([0-9.]+)\),\s+slot\((\d+)\),\s+prio\((\d+)\)'
 )
+# OP25 fires "releasing: tg(...), freq(...), slot(N), reason(duidN)" at end of call.
+RELEASE_RE = re.compile(
+    r'releasing:\s+tg\((\d+)\),\s+freq\(([0-9.]+)\),\s+slot\((\d+)\)'
+)
 CC_RE = re.compile(r'control channel.*freq\(([0-9.]+)\)', re.IGNORECASE)
 
 
@@ -87,13 +91,17 @@ class OP25Bridge:
         log.info("starting multi_rx.py with config=%s", self.cfg.config_json)
         # Truncate prior log for clean tailing start.
         self.cfg.log_path.write_text("")
-        logf = open(self.cfg.log_path, "a")
+        logf = open(self.cfg.log_path, "a", buffering=1)  # line-buffered on our end
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"  # ensure multi_rx flushes each print
         self._proc = subprocess.Popen(
-            ["python3", "multi_rx.py", "-v", "1", "-c", self.cfg.config_json],
+            # -u flag forces unbuffered stdout/stderr in the child Python.
+            ["python3", "-u", "multi_rx.py", "-v", "2", "-c", self.cfg.config_json],
             cwd=str(self.cfg.op25_dir),
             stdout=logf,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            env=env,
         )
         self.started_at = time.time()
         self._log_thread = threading.Thread(target=self._tail_log, name="op25-log", daemon=True)
@@ -162,6 +170,13 @@ class OP25Bridge:
                 tgid, rid, freq, _slot, _prio = m.groups()
                 self._handle_voice(int(tgid), int(rid), float(freq))
                 continue
+            # Release (end of call) — OP25 fires this ~100ms after the voice
+            # actually stops. Use the current time as the authoritative end_ts.
+            rel = RELEASE_RE.search(line)
+            if rel:
+                tgid = int(rel.group(1))
+                self._handle_release(tgid)
+                continue
             # Control channel
             cc = CC_RE.search(line)
             if cc:
@@ -217,6 +232,21 @@ class OP25Bridge:
                 if rid:
                     ac.rid = rid
 
+    def _handle_release(self, tgid: int):
+        """OP25 'releasing:' line — finalize this call immediately."""
+        now = time.time()
+        with self._lock:
+            ac = self._active.get(tgid)
+            if ac is None:
+                return
+            # Update last_update_ts to 'now' so the WAV reflects the tail
+            # audio that may still be flushing.
+            ac.last_update_ts = now
+            self._finalize_call_locked(ac, now)
+            self._active.pop(tgid, None)
+            if self._current_tgid == tgid:
+                self._current_tgid = None
+
     # --- UDP audio ------------------------------------------------------
 
     def _udp_loop(self):
@@ -261,6 +291,9 @@ class OP25Bridge:
     # --- call timeout / finalization -----------------------------------
 
     def _timeout_loop(self):
+        """Safety net — finalize any call that hasn't seen voice-update in N
+        seconds, even if OP25 didn't emit a 'releasing:' line.
+        """
         while not self._stop.wait(0.5):
             now = time.time()
             to_close = []
@@ -269,7 +302,10 @@ class OP25Bridge:
                     if now - ac.last_update_ts > self.cfg.call_timeout_s:
                         to_close.append((tg, ac))
                 for tg, ac in to_close:
-                    self._finalize_call_locked(ac, ac.last_update_ts)
+                    # Use last_update_ts + a small tail so reported duration
+                    # reflects the actual voice window. If no multi-update
+                    # calls, this gives at least ~0.5s duration.
+                    self._finalize_call_locked(ac, max(ac.last_update_ts + 0.5, ac.start_ts + 0.5))
                     self._active.pop(tg, None)
                     if self._current_tgid == tg:
                         self._current_tgid = None
