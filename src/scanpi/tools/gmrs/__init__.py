@@ -156,6 +156,17 @@ class GmrsTool(Tool):
             ch = self._ch_by_num.get(top["channel"])
             if ch is not None:
                 top_freq_mhz = round(ch.freq_hz / 1e6, 4)
+        # Latest transcript preview (if any)
+        preview = preview_ts = preview_ch = None
+        row = self._db.conn.execute(
+            "SELECT channel, transcript, end_ts FROM tx_events "
+            "WHERE transcript IS NOT NULL AND transcript_status = 'ok' "
+            "ORDER BY end_ts DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            preview = row["transcript"]
+            preview_ts = row["end_ts"]
+            preview_ch = row["channel"]
         return {
             "running": True,
             "top_channel": top["channel"] if top else None,
@@ -164,6 +175,9 @@ class GmrsTool(Tool):
             "total_tx_24h": sum(s["tx_count"] for s in stats),
             "active_channels_24h": len(stats),
             "last_activity_ts": self._db.last_event_end_ts(),
+            "preview": preview,
+            "preview_tg": f"Ch {preview_ch}" if preview_ch else None,
+            "preview_ts": preview_ts,
         }
 
     # --- monitor callbacks ---------------------------------------------

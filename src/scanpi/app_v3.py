@@ -111,10 +111,20 @@ async function render(){
     }
     const lastTs = (sm && sm.last_activity_ts) || (t.status && t.status.last_activity_ts);
     const lastActivity = lastTs ? '<div class="meta"><span>last activity: <strong>'+fmtAgo(lastTs)+'</strong></span></div>' : '';
+    // Latest transcript preview — the "what did they say" blurb
+    let preview = '';
+    if (sm && sm.preview) {
+      const sub = sm.preview_tg ? (sm.preview_tg + ' · ') : '';
+      const when = sm.preview_ts ? (' · ' + fmtAgo(sm.preview_ts)) : '';
+      preview = '<div class="last-line" style="margin:10px 0 6px">'
+        + '<span style="color:var(--amber-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px">'+sub+'latest heard'+when+'</span><br>'
+        + '<span style="color:var(--green)">"'+sm.preview.replace(/</g,'&lt;')+'"</span>'
+        + '</div>';
+    }
     card.innerHTML =
       '<h3>'+t.name+' <span class="tag '+tagClass+'">'+tagText+'</span>'+activeTag+sdrBadge+'</h3>'+
       '<div class="desc">'+t.description+'</div>'+
-      stats +
+      stats + preview +
       '<div class="meta">'+statusMsg+'</div>'+lastActivity+
       '<div style="margin-top:10px;display:flex;gap:8px"><a class="inline" href="/tools/'+t.id+'/">Open →</a>'+controls+'</div>';
     grid.appendChild(card);

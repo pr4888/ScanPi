@@ -182,6 +182,19 @@ class OP25Tool(Tool):
         since = time.time() - 24 * 3600
         stats = self._db.talkgroup_stats(since_ts=since)
         top = stats[0] if stats else None
+        # Latest transcribed call — tiny preview on the dashboard card
+        preview = None
+        preview_ts = None
+        preview_tg = None
+        row = self._db.conn.execute(
+            "SELECT tg_name, transcript, end_ts FROM p25_calls "
+            "WHERE transcript IS NOT NULL AND transcript_status = 'ok' "
+            "ORDER BY end_ts DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            preview = row["transcript"]
+            preview_ts = row["end_ts"]
+            preview_tg = row["tg_name"]
         return {
             "running": True,
             "total_calls_24h": sum(s["call_count"] for s in stats),
@@ -190,6 +203,9 @@ class OP25Tool(Tool):
             "top_tg_name": top["tg_name"] if top else None,
             "top_count": top["call_count"] if top else 0,
             "last_activity_ts": self._db.last_call_end_ts(),
+            "preview": preview,
+            "preview_tg": preview_tg,
+            "preview_ts": preview_ts,
         }
 
     # --- API ------------------------------------------------------------

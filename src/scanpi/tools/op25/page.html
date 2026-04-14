@@ -28,7 +28,9 @@
   </section>
 
   <section>
-    <h2>Recent calls</h2>
+    <h2>Recent calls
+      <input id="recent-filter" placeholder="filter…" style="margin-left:12px;background:var(--bg-panel);border:1px solid var(--border);color:var(--green);padding:3px 8px;font-family:inherit;font-size:11px;width:200px">
+    </h2>
     <table id="recent">
       <thead><tr><th>Time</th><th>TGID</th><th>Name</th><th>Category</th><th class="num">Dur</th><th class="num">Freq</th><th>Audio</th><th>Transcript</th></tr></thead>
       <tbody></tbody>
@@ -165,6 +167,14 @@ async function refresh() {
     document.getElementById("updated").textContent = "error: " + err;
   }
 }
+// Client-side filter for Recent — matches TG name, TGID, category, transcript
+const filterInput = document.getElementById("recent-filter");
+filterInput.addEventListener("input", () => {
+  const q = filterInput.value.trim().toLowerCase();
+  for (const row of document.querySelectorAll("#recent tbody tr")) {
+    row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? "" : "none";
+  }
+});
 refresh();
 setInterval(refresh, 2000);
 </script>

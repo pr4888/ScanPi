@@ -70,10 +70,13 @@ class OP25Bridge:
         self._on_cc_freq = on_cc_freq
 
         self._proc: subprocess.Popen | None = None
+        self._logf = None
         self._log_thread: threading.Thread | None = None
         self._udp_thread: threading.Thread | None = None
         self._timeout_thread: threading.Thread | None = None
+        self._watchdog_thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self.restart_count = 0
 
         self._active: dict[int, ActiveCall] = {}  # tgid -> ActiveCall (one current per TG)
         self._current_tgid: int | None = None
@@ -88,21 +91,9 @@ class OP25Bridge:
         self._stop.clear()
         self.cfg.audio_dir.mkdir(parents=True, exist_ok=True)
         self.cfg.log_path.parent.mkdir(parents=True, exist_ok=True)
-        log.info("starting multi_rx.py with config=%s", self.cfg.config_json)
-        # Truncate prior log for clean tailing start.
-        self.cfg.log_path.write_text("")
-        logf = open(self.cfg.log_path, "a", buffering=1)  # line-buffered on our end
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"  # ensure multi_rx flushes each print
-        self._proc = subprocess.Popen(
-            # -u flag forces unbuffered stdout/stderr in the child Python.
-            ["python3", "-u", "multi_rx.py", "-v", "2", "-c", self.cfg.config_json],
-            cwd=str(self.cfg.op25_dir),
-            stdout=logf,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            env=env,
-        )
+        self._logf = None
+        self.restart_count = 0
+        self._spawn_multi_rx()
         self.started_at = time.time()
         self._log_thread = threading.Thread(target=self._tail_log, name="op25-log", daemon=True)
         self._log_thread.start()
@@ -110,7 +101,25 @@ class OP25Bridge:
         self._udp_thread.start()
         self._timeout_thread = threading.Thread(target=self._timeout_loop, name="op25-timeout", daemon=True)
         self._timeout_thread.start()
-        log.info("OP25 bridge started (pid=%s, udp=%d)", self._proc.pid, self.cfg.udp_port)
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, name="op25-watchdog", daemon=True)
+        self._watchdog_thread.start()
+        log.info("OP25 bridge started (pid=%s, udp=%d)", self._proc.pid if self._proc else "?", self.cfg.udp_port)
+
+    def _spawn_multi_rx(self):
+        log.info("spawning multi_rx.py with config=%s", self.cfg.config_json)
+        # Truncate prior log only on first spawn so restart context is kept.
+        if self.restart_count == 0 and self.cfg.log_path.exists():
+            self.cfg.log_path.write_text("")
+        if self._logf is None or self._logf.closed:
+            self._logf = open(self.cfg.log_path, "a", buffering=1)
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        self._proc = subprocess.Popen(
+            ["python3", "-u", "multi_rx.py", "-v", "2", "-c", self.cfg.config_json],
+            cwd=str(self.cfg.op25_dir),
+            stdout=self._logf, stderr=subprocess.STDOUT,
+            start_new_session=True, env=env,
+        )
 
     def stop(self, timeout: float = 3.0):
         self._stop.set()
@@ -138,10 +147,13 @@ class OP25Bridge:
                     pass
             self._proc = None
 
-        for t in (self._log_thread, self._udp_thread, self._timeout_thread):
+        for t in (self._log_thread, self._udp_thread, self._timeout_thread, self._watchdog_thread):
             if t is not None:
                 t.join(timeout=1.0)
-        self._log_thread = self._udp_thread = self._timeout_thread = None
+        self._log_thread = self._udp_thread = self._timeout_thread = self._watchdog_thread = None
+        if self._logf and not self._logf.closed:
+            try: self._logf.close()
+            except Exception: pass
         self.started_at = None
         log.info("OP25 bridge stopped")
 
@@ -290,6 +302,38 @@ class OP25Bridge:
 
     # --- call timeout / finalization -----------------------------------
 
+    def _watchdog_loop(self):
+        """Restart multi_rx.py if it dies unexpectedly.
+
+        Crash loops (restart <30 s apart 3x) are disabled to prevent runaway.
+        """
+        last_restart_ts = time.time()
+        consecutive_fast_restarts = 0
+        while not self._stop.wait(2.0):
+            if self._proc is None:
+                continue
+            ret = self._proc.poll()
+            if ret is None:
+                continue
+            # Process has exited.
+            now = time.time()
+            if now - last_restart_ts < 30:
+                consecutive_fast_restarts += 1
+            else:
+                consecutive_fast_restarts = 0
+            if consecutive_fast_restarts >= 3:
+                log.error("multi_rx.py crashed 3x in rapid succession — giving up (restart the tool manually)")
+                return
+            self.restart_count += 1
+            last_restart_ts = now
+            log.warning("multi_rx.py exited with code %s — respawning (restart #%d)",
+                        ret, self.restart_count)
+            try:
+                self._spawn_multi_rx()
+            except Exception:
+                log.exception("respawn failed")
+                return
+
     def _timeout_loop(self):
         """Safety net — finalize any call that hasn't seen voice-update in N
         seconds, even if OP25 didn't emit a 'releasing:' line.
@@ -333,9 +377,10 @@ class OP25Bridge:
                 "start_ts": ac.start_ts, "elapsed_s": round(time.time() - ac.start_ts, 1),
             } for ac in self._active.values()]
             return {
-                "running": self._proc is not None,
+                "running": self._proc is not None and self._proc.poll() is None,
                 "pid": self._proc.pid if self._proc else None,
                 "started_at": self.started_at,
                 "cc_freq_mhz": self.cc_freq_mhz,
                 "active_calls": active,
+                "restart_count": self.restart_count,
             }

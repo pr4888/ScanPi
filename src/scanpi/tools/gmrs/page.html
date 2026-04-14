@@ -36,7 +36,9 @@
   </section>
 
   <section>
-    <h2>Recent transmissions</h2>
+    <h2>Recent transmissions
+      <input id="recent-filter" placeholder="filter…" style="margin-left:12px;background:var(--bg-panel);border:1px solid var(--border);color:var(--green);padding:3px 8px;font-family:inherit;font-size:11px;width:200px">
+    </h2>
     <table id="recent">
       <thead><tr><th>Time</th><th>Ch</th><th class="num">Dur</th><th class="num">Peak</th><th>Subtone</th><th>Audio</th><th>Transcript</th></tr></thead>
       <tbody></tbody>
@@ -191,6 +193,16 @@ async function refresh() {
   }
 }
 
+// Client-side filter for Recent — match channel, RSSI, subtone, transcript
+const filterInput = document.getElementById("recent-filter");
+if (filterInput) {
+  filterInput.addEventListener("input", () => {
+    const q = filterInput.value.trim().toLowerCase();
+    for (const row of document.querySelectorAll("#recent tbody tr")) {
+      row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? "" : "none";
+    }
+  });
+}
 refresh();
 setInterval(refresh, 2000);
 </script>
