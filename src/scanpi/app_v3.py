@@ -65,6 +65,15 @@ DASHBOARD_BODY = """
   <h2>Tools</h2>
   <div class="grid" id="tools-grid">Loading…</div>
 </section>
+
+<section>
+  <h2>Live activity — all tools
+    <span id="feed-count" style="margin-left:12px;color:var(--amber);font-size:11px"></span>
+  </h2>
+  <div class="panel" id="live-feed" style="max-height:400px;overflow-y:auto">
+    <div style="color:var(--green-dim);font-size:11px">Loading…</div>
+  </div>
+</section>
 <script>
 const fmtAgo = ts => {
   if(!ts) return "never";
@@ -155,8 +164,64 @@ async function deactivate(){
   await fetch("/api/coordinator/deactivate", {method:"POST"});
   render();
 }
+// Unified live feed — pulls Recent from each tool, merges by timestamp
+async function renderFeed() {
+  try {
+    const toolsResp = await fetch("/api/tools").then(r => r.json());
+    const items = [];
+    for (const t of toolsResp.tools) {
+      try {
+        const rec = await fetch(`/tools/${t.id}/api/recent?limit=25`).then(r => r.json());
+        const list = rec.events || rec.calls || [];
+        for (const e of list) {
+          items.push({
+            ts: e.start_ts,
+            tool: t.id,
+            toolName: t.name,
+            label: e.tg_name || ("Ch " + e.channel),
+            category: e.category || (e.channel ? "gmrs" : "other"),
+            duration: e.duration_s,
+            transcript: e.transcript,
+            alert_kind: e.alert_kind,
+            id: e.id,
+          });
+        }
+      } catch (err) {}
+    }
+    items.sort((a, b) => b.ts - a.ts);
+    const top = items.slice(0, 25);
+    document.getElementById("feed-count").textContent = `${items.length} recent events across tools`;
+    const feed = document.getElementById("live-feed");
+    if (!top.length) {
+      feed.innerHTML = '<div style="color:var(--green-dim);font-size:11px">No activity yet.</div>';
+      return;
+    }
+    feed.innerHTML = top.map(it => {
+      const alertBadge = it.alert_kind ? `<span class="alert-badge ${it.alert_kind}">${it.alert_kind}</span>` : "";
+      const dur = it.duration != null ? (it.duration < 60 ? it.duration.toFixed(1)+"s" : (it.duration/60).toFixed(1)+"m") : "—";
+      const text = it.transcript
+        ? `<span style="color:var(--green)">"${it.transcript.replace(/</g,"&lt;")}"</span>`
+        : '<span style="color:var(--green-deep)">(no transcript)</span>';
+      const timeStr = new Date(it.ts*1000).toLocaleTimeString();
+      return `<div style="border-bottom:1px dashed var(--border);padding:6px 0;font-size:12px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="color:var(--amber);font-variant-numeric:tabular-nums">${timeStr}</span>
+          <a href="/tools/${it.tool}/" style="color:var(--green-dim);font-size:10px;text-transform:uppercase;letter-spacing:1px">${it.tool}</a>
+          <span style="color:var(--fg)">${it.label}</span>
+          <span style="color:var(--green-dim);font-size:11px">${dur}</span>
+          ${alertBadge}
+        </div>
+        <div style="margin-top:2px;margin-left:72px">${text}</div>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    document.getElementById("live-feed").innerHTML = '<div style="color:var(--hot);font-size:11px">feed error: '+e+'</div>';
+  }
+}
 render();
+renderFeed();
 setInterval(render, 3000);
+setInterval(renderFeed, 4000);
 </script>
 """
 
