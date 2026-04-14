@@ -61,7 +61,9 @@ class GmrsTool(Tool):
             max_record_s=float(cfg.get("max_record_s", 120.0)),
         )
         self._channels: list[Channel] = list(CHANNELS_462)
-        self._db: GmrsDB | None = None
+        # Open DB immediately so historical reads work before/after start().
+        self._db: GmrsDB = GmrsDB(self._db_path)
+        self._db.connect()
         self._monitor: GmrsMonitor | None = None
         self._lock = threading.Lock()
         self._live: dict[int, LiveChannelState] = {}
@@ -79,8 +81,6 @@ class GmrsTool(Tool):
     # --- lifecycle ------------------------------------------------------
 
     def start(self) -> None:
-        self._db = GmrsDB(self._db_path)
-        self._db.connect()
         # Cleanup any events that never closed (prior unclean shutdown)
         cur = self._db.conn.execute(
             "UPDATE tx_events SET end_ts = start_ts, duration_s = 0 WHERE end_ts IS NULL"
@@ -126,6 +126,7 @@ class GmrsTool(Tool):
         self._retention.start()
 
     def stop(self) -> None:
+        """Stop live capture but keep DB open for historical browsing."""
         if self._transcriber is not None:
             try: self._transcriber.stop()
             except Exception: log.exception("transcriber stop failed")
@@ -138,9 +139,7 @@ class GmrsTool(Tool):
             try: self._monitor.stop()
             except Exception: log.exception("GMRS monitor stop failed")
             self._monitor = None
-        if self._db is not None:
-            self._db.close()
-            self._db = None
+        # DB stays open — historical reads still work while idle.
         self._open_events.clear()
         self._started_ts = None
 

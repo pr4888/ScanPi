@@ -225,14 +225,14 @@ async function refresh() {
     let prev = null;
     for (const c of recent.calls) {
       let tr = existing.get(String(c.id));
+      const audioHtml = c.clip_path
+        ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
+        : "—";
       if (!tr) {
         tr = document.createElement("tr");
         tr.dataset.callId = String(c.id);
         tr.classList.add("expandable");
         if (c.alert_kind) tr.classList.add("alert");
-        const audio = c.clip_path
-          ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
-          : "—";
         tr.innerHTML = `
           <td>${fmt.time(c.start_ts)}</td>
           <td>${c.tgid}</td>
@@ -240,13 +240,27 @@ async function refresh() {
           <td>${catTag(c.category||"other")}</td>
           <td class="num">${fmt.dur(c.duration_s)}</td>
           <td class="num">${fmt.freq(c.freq_mhz)}</td>
-          <td>${audio}</td>
+          <td class="audio-cell">${audioHtml}</td>
           <td class="transcript-cell">${transcriptCell(c)}</td>`;
         tr.addEventListener("click", e => toggleDetail(c.id, tr));
       } else {
+        // Update audio cell only if it changed (avoids restarting a playing <audio>)
+        const ac = tr.querySelector(".audio-cell");
+        if (ac && ac.dataset.hasClip !== String(!!c.clip_path)) {
+          ac.innerHTML = audioHtml;
+          ac.dataset.hasClip = String(!!c.clip_path);
+        }
         const tc = tr.querySelector(".transcript-cell");
         if (tc) tc.innerHTML = transcriptCell(c);
+        // Also update the alert class if a transcript just arrived
+        if (c.alert_kind && !tr.classList.contains("alert")) tr.classList.add("alert");
+        // And duration cell if it was open-ended
+        const durCell = tr.querySelectorAll("td")[4];
+        if (durCell && durCell.textContent === "—") durCell.textContent = fmt.dur(c.duration_s);
       }
+      // Set initial dataset for next tick
+      const ac = tr.querySelector(".audio-cell");
+      if (ac && !ac.dataset.hasClip) ac.dataset.hasClip = String(!!c.clip_path);
       if (prev === null) {
         if (body.firstChild !== tr) body.insertBefore(tr, body.firstChild);
       } else if (prev.nextSibling !== tr) {

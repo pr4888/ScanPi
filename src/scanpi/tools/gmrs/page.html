@@ -224,29 +224,37 @@ async function refresh() {
     let prev = null;
     for (const e of recent.events) {
       let tr = existing.get(String(e.id));
+      const audioHtml = e.clip_path
+        ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px" onclick="event.stopPropagation()"></audio>`
+        : "—";
       if (!tr) {
         tr = document.createElement("tr");
         tr.dataset.eventId = String(e.id);
         tr.classList.add("expandable");
         if (e.alert_kind) tr.classList.add("alert");
-        const audio = e.clip_path
-          ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px" onclick="event.stopPropagation()"></audio>`
-          : "—";
         tr.innerHTML = `
           <td>${fmt.time(e.start_ts)}</td>
           <td>${chTag(e.channel)}</td>
           <td class="num">${fmt.dur(e.duration_s)}</td>
           <td class="num">${fmt.rssi(e.peak_rssi)}</td>
           <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
-          <td>${audio}</td>
+          <td class="audio-cell">${audioHtml}</td>
           <td class="transcript-cell">${transcriptCell(e)}</td>`;
         tr.addEventListener("click", () => toggleDetail(e.id, tr));
       } else {
-        // Row exists — only refresh the transcript cell (may change from
-        // "pending" to actual text after Whisper finishes).
+        const ac = tr.querySelector(".audio-cell");
+        if (ac && ac.dataset.hasClip !== String(!!e.clip_path)) {
+          ac.innerHTML = audioHtml;
+          ac.dataset.hasClip = String(!!e.clip_path);
+        }
         const tc = tr.querySelector(".transcript-cell");
         if (tc) tc.innerHTML = transcriptCell(e);
+        if (e.alert_kind && !tr.classList.contains("alert")) tr.classList.add("alert");
+        const durCell = tr.querySelectorAll("td")[2];
+        if (durCell && durCell.textContent === "—") durCell.textContent = fmt.dur(e.duration_s);
       }
+      const ac = tr.querySelector(".audio-cell");
+      if (ac && !ac.dataset.hasClip) ac.dataset.hasClip = String(!!e.clip_path);
       // Position it after prev (preserves server order without touching unchanged rows).
       if (prev === null) {
         if (recTbody.firstChild !== tr) recTbody.insertBefore(tr, recTbody.firstChild);

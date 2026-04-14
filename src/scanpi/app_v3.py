@@ -195,6 +195,7 @@ async function renderFeed() {
             transcript: e.transcript,
             alert_kind: e.alert_kind,
             id: e.id,
+            has_clip: !!e.clip_path,
           });
         }
       } catch (err) {}
@@ -214,6 +215,9 @@ async function renderFeed() {
         ? `<span style="color:var(--green)">"${it.transcript.replace(/</g,"&lt;")}"</span>`
         : '<span style="color:var(--green-deep)">(no transcript)</span>';
       const timeStr = new Date(it.ts*1000).toLocaleTimeString();
+      const audio = it.has_clip
+        ? `<audio controls preload="none" src="/tools/${it.tool}/api/clip/${it.id}" style="height:24px;width:160px;vertical-align:middle"></audio>`
+        : '<span style="color:var(--green-deep);font-size:10px">(no audio)</span>';
       return `<div style="border-bottom:1px dashed var(--border);padding:6px 0;font-size:12px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span style="color:var(--amber);font-variant-numeric:tabular-nums">${timeStr}</span>
@@ -221,6 +225,7 @@ async function renderFeed() {
           <span style="color:var(--fg)">${it.label}</span>
           <span style="color:var(--green-dim);font-size:11px">${dur}</span>
           ${alertBadge}
+          ${audio}
         </div>
         <div style="margin-top:2px;margin-left:72px">${text}</div>
       </div>`;

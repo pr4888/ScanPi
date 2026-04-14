@@ -55,7 +55,9 @@ class OP25Tool(Tool):
             audio_dir=self._audio_dir,
             udp_port=self._udp_port,
         )
-        self._db: OP25DB | None = None
+        # Open DB immediately so historical reads work before/after start().
+        self._db: OP25DB = OP25DB(self._db_path)
+        self._db.connect()
         self._bridge: OP25Bridge | None = None
         self._transcriber: TranscriptionWorker | None = None
         self._talkgroups: dict[int, dict] = {}
@@ -73,8 +75,6 @@ class OP25Tool(Tool):
                 f"OP25 not found at {self._op25_dir} — install per "
                 "https://github.com/boatbod/op25 before activating this tool"
             )
-        self._db = OP25DB(self._db_path)
-        self._db.connect()
         orphaned = self._db.orphan_cleanup()
         if orphaned:
             log.info("cleaned %d orphan p25_calls from prior run", orphaned)
@@ -154,6 +154,11 @@ class OP25Tool(Tool):
             self._transcriber.start()
 
     def stop(self) -> None:
+        """Stop the live capture pipeline but keep the DB open so
+        historical calls remain browsable via the API while the tool
+        is idle (user may swap back, or just want to view yesterday's
+        data while the other tool holds the SDR).
+        """
         if self._transcriber is not None:
             try: self._transcriber.stop()
             except Exception: log.exception("transcriber stop failed")
@@ -166,9 +171,7 @@ class OP25Tool(Tool):
             try: self._bridge.stop()
             except Exception: log.exception("bridge stop failed")
             self._bridge = None
-        if self._db is not None:
-            self._db.close()
-            self._db = None
+        # DB stays open — historical reads still work while idle.
 
     def _on_clips_deleted(self, paths: list[str]):
         """Null out clip_path for rows whose WAV was pruned."""
