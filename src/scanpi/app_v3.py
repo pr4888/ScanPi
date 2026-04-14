@@ -31,35 +31,12 @@ log = logging.getLogger(__name__)
 
 SHELL_HTML = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>ScanPi — __TITLE__</title>
-<style>
- :root{--bg:#0b0d10;--fg:#d8dde3;--dim:#7b8796;--ok:#4ae04a;--hot:#ff8844;--hdr:#1a1f26;--row:#12161c;--accent:#4a9eff;--warn:#ffaa33}
- html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
- header{padding:10px 18px;background:var(--hdr);border-bottom:1px solid #252d38;display:flex;align-items:center;gap:18px}
- header h1{margin:0;font-size:15px;letter-spacing:.5px}
- nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
- nav a{color:var(--dim);text-decoration:none;padding:6px 10px;border-radius:4px;font-size:13px}
- nav a:hover{background:#202732;color:var(--fg)}
- nav a.active{background:var(--accent);color:#000}
- main{padding:16px;max-width:1200px;margin:0 auto}
- h2{font-size:13px;text-transform:uppercase;color:var(--dim);margin:0 0 10px;letter-spacing:.5px}
- .card{background:var(--row);border-radius:6px;padding:14px 16px;margin-bottom:12px;border:1px solid #1d232b}
- .card h3{margin:0 0 6px;font-size:14px;font-weight:500}
- .card .tag{font-size:11px;padding:2px 8px;border-radius:3px;margin-left:8px;text-transform:uppercase;letter-spacing:.5px}
- .tag.running{background:#1a3a1a;color:var(--ok)}
- .tag.stopped{background:#2a1a1a;color:var(--dim)}
- .tag.active{background:#1a2a3a;color:var(--accent)}
- .card .desc{color:var(--dim);font-size:12px;margin:4px 0 10px}
- .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
- .meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--dim)}
- .meta strong{color:var(--fg)}
- button{background:var(--accent);color:#000;border:0;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600}
- button.secondary{background:#2a3240;color:var(--fg)}
- button:disabled{opacity:.4;cursor:not-allowed}
- a.inline{color:var(--accent);text-decoration:none}
-</style></head><body>
+<title>ScanPi :: __TITLE__</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+</head><body>
 <header>
- <h1>ScanPi</h1>
+ <h1><span class="live-dot"></span>ScanPi</h1>
  <nav id="nav"></nav>
 </header>
 <main id="main">__BODY__</main>
@@ -124,15 +101,12 @@ async function render(){
     let stats = '';
     if (sm.running && (sm.total_tx_24h || sm.top_channel != null)) {
       const topLabel = sm.top_channel != null
-        ? `Ch ${sm.top_channel}${sm.top_freq_mhz ? ` (${sm.top_freq_mhz} MHz)` : ''}`
+        ? `Ch ${sm.top_channel}${sm.top_freq_mhz ? ` · ${sm.top_freq_mhz} MHz` : ''}`
         : '—';
-      stats = '<div style="display:flex;gap:18px;margin:10px 0 6px">'
-        + '<div><div style="font-size:22px;font-weight:600">'+(sm.total_tx_24h||0)+'</div>'
-        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">TX / 24h</div></div>'
-        + '<div><div style="font-size:22px;font-weight:600">'+(sm.active_channels_24h||0)+'</div>'
-        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">active ch</div></div>'
-        + '<div><div style="font-size:14px;font-weight:600;margin-top:4px">'+topLabel+'</div>'
-        + '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">busiest</div></div>'
+      stats = '<div class="stat-row">'
+        + '<div><div class="stat-big">'+(sm.total_tx_24h||0)+'</div><div class="stat-label">TX / 24h</div></div>'
+        + '<div><div class="stat-big">'+(sm.active_channels_24h||0)+'</div><div class="stat-label">active ch</div></div>'
+        + '<div><div class="stat-big" style="font-size:14px;margin-top:4px">'+topLabel+'</div><div class="stat-label">busiest</div></div>'
         + '</div>';
     }
     const lastTs = (sm && sm.last_activity_ts) || (t.status && t.status.last_activity_ts);
@@ -165,7 +139,19 @@ def _render_shell(title: str, body: str) -> str:
 
 
 def create_app(registry: ToolRegistry, coordinator: SdrCoordinator) -> FastAPI:
+    from fastapi.staticfiles import StaticFiles
     app = FastAPI(title="ScanPi")
+
+    static_dir = Path(__file__).parent / "web"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon():
+        from fastapi.responses import FileResponse
+        f = static_dir / "favicon.svg"
+        if f.exists():
+            return FileResponse(f, media_type="image/svg+xml")
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard():

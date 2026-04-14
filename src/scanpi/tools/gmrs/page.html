@@ -2,41 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ScanPi GMRS Monitor</title>
-<style>
- :root { --bg:#0b0d10; --fg:#d8dde3; --dim:#7b8796; --ok:#4ae04a; --hot:#ff8844; --hdr:#1a1f26; --row:#12161c; --accent:#4a9eff; }
- html,body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,sans-serif; }
- header { padding:12px 18px; background:var(--hdr); border-bottom:1px solid #252d38; display:flex; justify-content:space-between; align-items:center; }
- h1 { margin:0; font-size:16px; letter-spacing:.5px; }
- .sub { color:var(--dim); font-size:12px; }
- main { padding:16px; max-width:1200px; margin:0 auto; }
- table { width:100%; border-collapse:collapse; background:var(--row); }
- th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #1d232b; }
- th { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.5px; background:var(--hdr); }
- tr.open td:first-child::before { content:"● "; color:var(--ok); }
- tr.open { background:#13211a; }
- .rssi-bar { display:inline-block; height:6px; background:#2a3240; vertical-align:middle; margin-left:8px; }
- .rssi-fill { height:100%; background:linear-gradient(90deg,#4a9eff,#4ae04a,#ff8844); }
- .freq { color:var(--dim); font-variant-numeric:tabular-nums; }
- .num { font-variant-numeric:tabular-nums; text-align:right; }
- .hot { color:var(--hot); font-weight:600; }
- section { margin-top:24px; }
- h2 { font-size:13px; text-transform:uppercase; color:var(--dim); margin:0 0 8px; letter-spacing:.5px; }
- .recommend { background:var(--row); padding:12px 16px; border-left:3px solid var(--accent); margin-bottom:16px; }
- .recommend strong { color:var(--accent); }
- .ch-tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:12px; font-weight:600; min-width:40px; text-align:center; }
- .last-line { color:var(--dim); font-size:13px; margin-top:6px; }
- .last-line strong { color:var(--fg); }
- .transcript { color:var(--fg); font-style:italic; max-width:360px; word-break:break-word; }
- .transcript.pending { color:var(--dim); font-style:normal; font-size:11px; }
- .transcript.empty { color:#4a5260; font-size:11px; }
-</style>
+<title>ScanPi :: GMRS Monitor</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
 <header>
   <div>
-    <h1>ScanPi — GMRS/FRS Monitor</h1>
-    <div style="margin-top:4px"><a href="/" style="color:#4a9eff;font-size:12px;text-decoration:none">← dashboard</a></div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; GMRS/FRS Monitor</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
     <div class="sub" id="meta">loading…</div>
   </div>
   <div class="sub" id="updated">—</div>

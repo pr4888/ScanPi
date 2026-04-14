@@ -1,79 +1,71 @@
 # ScanPi
 
-Self-contained Raspberry Pi 5 radio scanner with auto-discovery, recording, transcription, and web UI.
+A modular, self-contained radio scanner for any Linux box with an RTL-SDR.
+Starts with a **GMRS/FRS neighborhood monitor** tool and grows by plugging in
+more specialty tools (ham, NOAA, ADS-B, ISM, …).
 
-## What it does
+Phosphor-themed web UI. Works on a Raspberry Pi, NUC, or an old laptop.
 
-1. **Discovers** — Sweeps local spectrum, finds active frequencies automatically
-2. **Classifies** — Identifies analog FM, P25, DMR, NXDN via signal analysis
-3. **Scans** — Priority-queue scanning with adaptive dwell times
-4. **Records** — VAD-gated recording (Silero) — only saves real voice
-5. **Transcribes** — On-device whisper.cpp (tiny.en) — no cloud needed
-6. **Learns** — Builds activity profiles, busy hours, frequency catalog
-7. **Serves** — Clean dark web UI for browsing, playback, search
+![ScanPi — phosphor UI](docs/screenshot.png)
+
+## One-line install
+
+On a fresh Debian / Ubuntu / Raspberry Pi OS (root required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pr4888/ScanPi/master/install.sh | sudo bash
+```
+
+That script:
+- installs GNU Radio, RTL-SDR tools, Python deps (`numpy<2` pinned)
+- creates a dedicated `scanpi` system user (no login, no baggage)
+- clones this repo into `/opt/scanpi`
+- installs `faster-whisper` for on-device transcription
+- writes a `scanpi.service` systemd unit and starts it
+- blacklists the DVB-T kernel driver and installs RTL-SDR udev rules
+
+When done, open `http://<host>:8080/` in a browser.
 
 ## Hardware
 
-- Raspberry Pi 5 (4GB+)
-- Any RTL-SDR (NESDR, generic, etc.)
-- SD card (32GB+)
-- Optional: USB drive for expanded storage
+- Any Linux host (Pi 4/5, x86 mini-PC, old laptop)
+- Any RTL-SDR (NESDR SMArTee, generic, HackRF also works)
+- Decent antenna for your band of interest (quarter-wave whip for 462 MHz is ~6.4")
 
-## Quick Start
+## What's included
 
-```bash
-# Install
-pip install -e .
+| Tool | Band | Purpose |
+|---|---|---|
+| **GMRS Monitor** | 462 MHz block, 15 channels | Track who's on FRS/GMRS in the neighborhood, record + transcribe transmissions |
+| *(add your own)* | — | Plug-in architecture — see `src/scanpi/tools/__init__.py` for the `Tool` base class |
 
-# First run — creates config
-scanpi --init
+Only one SDR-holding tool runs at a time; the dashboard lets you switch
+between them. State persists across reboots.
 
-# Edit config (optional)
-nano ~/scanpi/config.toml
-
-# Run
-scanpi
-
-# Open browser
-# http://pi-hostname:8080
-```
-
-## One-shot survey
+## Upgrading
 
 ```bash
-scanpi --survey-only
+sudo bash /opt/scanpi/install.sh
 ```
 
-## Install on Pi 5
+The installer is idempotent and will pull the latest `master`.
+
+## Manual / development install
 
 ```bash
-# Dependencies
-sudo apt install rtl-sdr librtlsdr-dev
-
-# Optional: whisper.cpp for transcription
-# Build from source or use faster-whisper
-pip install faster-whisper
-
-# Optional: Silero VAD for noise rejection
-pip install onnxruntime
-# Download silero_vad.onnx to ~/scanpi/models/
+git clone https://github.com/pr4888/ScanPi
+cd ScanPi
+pip install --break-system-packages -e .
+pip install --break-system-packages 'numpy<2' faster-whisper
+scanpi-v3
 ```
 
-## Architecture
+## Data layout
 
-```
-scanpi/
-├── surveyor.py     — rtl_power spectrum sweeps
-├── classifier.py   — signal identification (FM/P25/DMR/NXDN)
-├── scanner.py      — priority-queue tuning + recording
-├── transcriber.py  — whisper.cpp / faster-whisper
-├── storage.py      — retention, USB auto-mount
-├── db.py           — SQLite catalog + recordings + transcripts
-├── api.py          — FastAPI REST endpoints
-├── app.py          — main orchestrator
-└── web/            — dark theme web UI
-```
+- `/opt/scanpi/` — code
+- `~scanpi/scanpi/` — runtime data (SQLite DB, audio clips, Whisper model cache, coordinator state)
+- `/etc/systemd/system/scanpi.service` — service
 
 ## License
 
-MIT
+MIT — see `LICENSE`.
