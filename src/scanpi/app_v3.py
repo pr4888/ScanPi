@@ -125,10 +125,23 @@ async function render(){
         + '<span style="color:var(--green)">"'+sm.preview.replace(/</g,'&lt;')+'"</span>'
         + '</div>';
     }
+    // Alert ribbon — 24h alert counts, clickable to open the tool page
+    let alertRibbon = '';
+    if (sm && sm.alert_counts) {
+      const kinds = Object.entries(sm.alert_counts);
+      if (kinds.length > 0) {
+        const total = kinds.reduce((a, [,n]) => a + n, 0);
+        const badges = kinds.map(([k, n]) =>
+          `<span class="alert-badge ${k}">${k} ${n}</span>`
+        ).join(' ');
+        alertRibbon = `<div class="alert-banner" style="margin:10px 0 6px;padding:6px 10px;font-size:11px">`
+          + `<strong>ALERTS 24h:</strong> ${total} · ${badges}</div>`;
+      }
+    }
     card.innerHTML =
       '<h3>'+t.name+' <span class="tag '+tagClass+'">'+tagText+'</span>'+activeTag+sdrBadge+'</h3>'+
       '<div class="desc">'+t.description+'</div>'+
-      stats + preview +
+      stats + alertRibbon + preview +
       '<div class="meta">'+statusMsg+'</div>'+lastActivity+
       '<div style="margin-top:10px;display:flex;gap:8px"><a class="inline" href="/tools/'+t.id+'/">Open →</a>'+controls+'</div>';
     grid.appendChild(card);
