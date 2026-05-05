@@ -21,8 +21,20 @@ from ...tools import Tool, ToolStatus
 from ...retention import RetentionConfig, RetentionManager
 from .channels import Channel, CHANNELS_462
 from .db import GmrsDB
-from .monitor import GmrsMonitor, MonitorConfig
 from .transcriber import TranscribeJob, TranscriptionWorker
+
+# .monitor pulls in gnuradio at import time. Skip cleanly when GR isn't
+# installed (Ubuntu venv without system-site-packages, dev box, etc.) so
+# the rest of the framework still loads.
+try:
+    from .monitor import GmrsMonitor, MonitorConfig
+    _GR_AVAILABLE = True
+    _GR_IMPORT_ERROR: str | None = None
+except ImportError as _gr_err:
+    GmrsMonitor = None  # type: ignore
+    MonitorConfig = None  # type: ignore
+    _GR_AVAILABLE = False
+    _GR_IMPORT_ERROR = str(_gr_err)
 
 log = logging.getLogger(__name__)
 
@@ -52,15 +64,19 @@ class GmrsTool(Tool):
         self._audio_dir = data_dir / "gmrs_audio"
         self._audio_dir.mkdir(parents=True, exist_ok=True)
 
-        self._monitor_cfg = MonitorConfig(
-            center_hz=int(cfg.get("center_hz", 462_637_500)),
-            sample_rate=int(cfg.get("sample_rate", 2_000_000)),
-            rtl_gain=float(cfg.get("gain", 10.0)),
-            squelch_db=float(cfg.get("squelch_db", -30.0)),
-            preroll_s=float(cfg.get("preroll_s", 1.5)),
-            max_record_s=float(cfg.get("max_record_s", 120.0)),
-            sdr_args=str(cfg.get("sdr_args", "numchan=1 rtl=0")),
-        )
+        if _GR_AVAILABLE:
+            self._monitor_cfg = MonitorConfig(
+                center_hz=int(cfg.get("center_hz", 462_637_500)),
+                sample_rate=int(cfg.get("sample_rate", 2_000_000)),
+                rtl_gain=float(cfg.get("gain", 10.0)),
+                squelch_db=float(cfg.get("squelch_db", -30.0)),
+                preroll_s=float(cfg.get("preroll_s", 1.5)),
+                max_record_s=float(cfg.get("max_record_s", 120.0)),
+                sdr_args=str(cfg.get("sdr_args", "numchan=1 rtl=0")),
+            )
+        else:
+            self._monitor_cfg = None
+            log.warning("GMRS tool inert: gnuradio not importable (%s)", _GR_IMPORT_ERROR)
         self._channels: list[Channel] = list(CHANNELS_462)
         # Open DB immediately so historical reads work before/after start().
         self._db: GmrsDB = GmrsDB(self._db_path)
@@ -82,6 +98,9 @@ class GmrsTool(Tool):
     # --- lifecycle ------------------------------------------------------
 
     def start(self) -> None:
+        if not _GR_AVAILABLE:
+            log.error("can't start GMRS — gnuradio not installed")
+            return
         # Cleanup any events that never closed (prior unclean shutdown)
         cur = self._db.conn.execute(
             "UPDATE tx_events SET end_ts = start_ts, duration_s = 0 WHERE end_ts IS NULL"

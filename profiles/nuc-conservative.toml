@@ -1,0 +1,81 @@
+# ScanPi NUC profile — conservative for a host already running RF services.
+#
+# This box (NUC, t4-nuc11tnfi7) is on the rdcstic55 tailnet and currently
+# runs:
+#   - op25_bridge.py on USRP B200-mini (P25 trunking, uploads to spark-heimdall)
+#   - readsb on HackRF #2 (ADS-B aircraft → port 30003)
+#   - rtl_fm on dev0 (Elyme Fire 154.0625, Groton Fire 151.235)
+#   - hackrf_sweep on HackRF #1 (RF spectrum survey 313-318 MHz)
+#   - YARD Stick One ISM cataloger (when active)
+#
+# So ScanPi here runs as a SERVICE-only instance: search + alerts + geo over
+# whatever local databases come from the user wiring data sources in. Tools
+# that hold SDRs (gmrs / op25 / hackrf / ysone) are disabled in the registry
+# so they don't fight the existing services.
+#
+# To enable an SDR-holding tool: turn off the conflicting service first
+# (e.g., `systemctl stop scanpi-bridge` or `pkill -f hackrf_sweep`), then
+# flip the relevant section from `enabled = false` to `enabled = true` and
+# restart scanpi-v3.
+
+[profile]
+name = "nuc-conservative"
+target = "ubuntu-x86_64-nuc"
+description = "NUC services-only (no SDR contention with existing RF stack)"
+
+[transcription]
+enabled = true
+mode = "single-source"          # don't queue parallel whisper streams initially
+model = "small.en"              # NUC has CPU; better quality than tiny
+concurrent_streams = 1
+active_target = "none"          # nothing to transcribe yet — no source DB
+
+[search]
+fts5 = true
+semantic = true                 # NUC has the cores for embeddings
+embedding_model = "bge-small-en-v1.5"
+embed_backfill_max = 50000
+
+[alerts]
+mqtt_enabled = true
+mqtt_url = "mqtt://localhost:1883"
+watchlist_path = "~/scanpi/watchlist.yaml"
+backfill_hours = 24
+
+[geo]
+external_geocoder = true
+viewbox = [-72.50, 41.18, -71.85, 41.50]
+default_center = [41.3501, -72.0787]
+pin_ttl_minutes = 5
+local_geocoder = false
+
+[recording]
+audio_archive = "squelched-flac"
+iq_archive = false              # NUC disk was 100% — be conservative
+iq_ring_seconds = 0
+storage_max_gb = 10.0           # per-tool cap
+
+# ---- SDR-holding tools — DISABLED so they don't grab hardware -----------
+[hackrf]
+enabled = false                 # readsb + hackrf_sweep own the HackRFs
+
+# (gmrs and op25 tools always register; the coordinator gates them by
+# coordinator.json's persisted active state, which on a fresh install is
+# empty. So they don't auto-start. Override later by visiting /tools/<id>/
+# and clicking "activate".)
+
+[experimental]
+trunk_recorder = false
+cross_channel_correlation = false
+speaker_diarization = false
+auto_freq_discovery = false
+anomaly_detection = false
+
+[tailscale]
+serve_https = true
+funnel = false
+
+[web]
+host = "0.0.0.0"
+port = 8090                     # NOT 8080 — NUC has stuff on 8080 already?
+                                # Verify with `ss -tlnp` before starting
