@@ -10,9 +10,10 @@
 #   467.750-468.5375  Itinerant business
 #   469.500-470.000   Business
 #
-# Span: 460.0 -> 468.0 = 8 MHz exactly. Center at 464 MHz, 8 Msps -> [460, 468]
-# fits the lower 8 MHz of the band cleanly. The upper sliver 468-470 MHz is
-# OUTSIDE this profile's window — to cover it, retune to center 466 MHz.
+# Span of channels in this preset: 460.6125 -> 467.9125 = 7.3 MHz. Center at
+# 464.25 MHz, 8 Msps -> [460.25, 468.25] MHz window fits all listed channels
+# with margin (+0.34 MHz on each side, important for the PFB transition band).
+# To cover 469-470 MHz upper-business retune center to 466 MHz instead.
 #
 # These are *survey* channels: the UHF business pool is shared, license-by-coordination,
 # and tends to vary by region. Keep these as a wide net to discover what's active in
@@ -22,7 +23,7 @@
 id          = "hackrf_uhf_business"
 driver      = "hackrf"
 serial      = ""
-center_hz   = 464_000_000
+center_hz   = 464_250_000
 sample_rate = 8_000_000
 gain        = "lna=24,vga=20,amp=0"
 front_end   = "UHF 450-470 MHz BPF / SAW"

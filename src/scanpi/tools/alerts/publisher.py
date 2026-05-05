@@ -119,13 +119,25 @@ class MQTTPublisher:
     # --- internals ----------------------------------------------------
 
     def _connect_loop(self):
+        import uuid
         host, port, user, pw = self.cfg.parse()
+        # paho-mqtt v2 ships v2 callback API by default; v1 is deprecated but
+        # still works if we ask for it. Try v2 first, fall back to v1 ctor.
+        try:
+            _api_v1 = mqtt.CallbackAPIVersion.VERSION1
+            _client_kwargs = dict(
+                callback_api_version=_api_v1,
+                client_id=f"{self.cfg.client_id}-{uuid.uuid4().hex[:6]}",
+                clean_session=True,
+            )
+        except AttributeError:
+            _client_kwargs = dict(
+                client_id=f"{self.cfg.client_id}-{uuid.uuid4().hex[:6]}",
+                clean_session=True,
+            )
         while not self._stop.is_set():
             try:
-                client = mqtt.Client(
-                    client_id=self.cfg.client_id,
-                    clean_session=True,
-                )
+                client = mqtt.Client(**_client_kwargs)
                 if user:
                     client.username_pw_set(user, pw or "")
                 client.on_connect = self._on_connect
@@ -134,12 +146,22 @@ class MQTTPublisher:
                 client.loop_start()
                 with self._lock:
                     self._client = client
-                # Wait until we're disconnected or shut down.
+                # Give CONNACK a moment to land, then poll. Without this the
+                # outer loop sees _connected == False and races to reconnect.
+                for _ in range(20):
+                    if self._connected or self._stop.is_set():
+                        break
+                    time.sleep(0.1)
                 while not self._stop.is_set() and self._connected:
                     time.sleep(1.0)
                 if self._stop.is_set():
                     return
-                # Disconnected — fall through to retry.
+                # Disconnected — clean up old client before retry.
+                try:
+                    client.loop_stop()
+                    client.disconnect()
+                except Exception:
+                    pass
             except Exception as e:
                 self._last_error = f"{type(e).__name__}: {e}"
                 self._connected = False
