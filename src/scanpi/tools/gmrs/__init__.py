@@ -184,14 +184,17 @@ class GmrsTool(Tool):
             last = max(filter(None, [last_in_mem if last_in_mem > 0 else None, last_db]),
                        default=None)
         healthy = True
-        if running:
+        if not _GR_AVAILABLE:
+            msg = "inert (gnuradio not installed)"
+            healthy = False
+        elif running and self._monitor_cfg is not None:
             msg = f"{len(self._channels)} channels @ {self._monitor_cfg.center_hz/1e6:.4f} MHz"
             started = self._started_ts or time.time()
             uptime = time.time() - started
             # GMRS is bursty — only warn after 2h with no activity (if past warmup)
             if uptime > 7200 and (not last or time.time() - last > 7200):
                 healthy = False
-                msg += " · ⚠ no TX in 2h"
+                msg += " no TX in 2h"
         else:
             msg = "stopped"
         return ToolStatus(
@@ -199,7 +202,8 @@ class GmrsTool(Tool):
             last_activity_ts=last,
             message=msg,
             extra={"channels": len(self._channels),
-                   "squelch_db": self._monitor_cfg.squelch_db,
+                   "squelch_db": (self._monitor_cfg.squelch_db
+                                  if self._monitor_cfg else None),
                    "started_ts": self._started_ts},
         )
 
@@ -353,6 +357,8 @@ class GmrsTool(Tool):
 
         @r.get("/live")
         def live():
+            if self._monitor_cfg is None:
+                return {"error": "gnuradio not installed", "running": False, "channels": []}
             with self._lock:
                 return {
                     "center_hz": self._monitor_cfg.center_hz,
