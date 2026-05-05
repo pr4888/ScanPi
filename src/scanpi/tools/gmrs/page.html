@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi :: GMRS Monitor</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+
+<style>
+.conv-card { background:var(--bg-panel); border:1px solid var(--border); border-radius:6px; padding:10px; }
+.conv-header { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:12px; }
+.conv-play-all, .conv-stop { font-size:10px; padding:2px 8px; background:var(--bg-panel); color:var(--green); border:1px solid var(--green); border-radius:3px; cursor:pointer; }
+.conv-play-all:hover { background:var(--green); color:var(--bg); }
+.conv-stop { border-color:var(--hot); color:var(--hot); }
+.conv-stop:hover { background:var(--hot); color:var(--bg); }
+.conv-timeline { display:flex; flex-direction:column; gap:3px; }
+.conv-evt { display:flex; align-items:center; gap:6px; font-size:11px; padding:3px 6px; border-radius:3px; transition: background 0.2s; }
+.conv-evt.conv-playing { background:rgba(111,255,157,0.12); }
+.conv-ts { color:var(--green-dim); min-width:70px; flex-shrink:0; }
+.conv-clip-play { background:none; border:1px solid var(--green-dim); color:var(--green); font-size:9px; padding:1px 5px; border-radius:3px; cursor:pointer; flex-shrink:0; }
+.conv-clip-play:hover { background:var(--green); color:var(--bg); }
+.conv-dur-bar { background:linear-gradient(90deg, rgba(111,255,157,0.25), rgba(111,255,157,0.05)); padding:1px 6px; border-radius:2px; font-size:10px; color:var(--green); white-space:nowrap; }
+.conv-rssi { color:var(--amber); font-size:10px; flex-shrink:0; }
+.conv-txt { color:var(--green-dim); font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; GMRS/FRS Monitor</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="last-line" id="last-tx">No activity yet.</div>
+  <div class="recommend" id="recommend">Collecting data…</div>
+
+  <section>
+    <h2>Live channels</h2>
+    <table id="live">
+      <thead><tr><th>Ch</th><th>Freq</th><th>RSSI</th><th>Peak</th><th>Last TX</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Activity — last 24h
+      <a href="api/export.csv" style="margin-left:12px;font-size:11px">[export CSV]</a>
+    </h2>
+    <div id="spark" style="background:var(--bg-panel);border:1px solid var(--border);padding:8px;margin-bottom:10px"></div>
+  </section>
+
+  <section>
+    <h2>Conversations
+      <span id="conv-count" style="font-size:11px;color:var(--amber)"></span>
+      <select id="conv-gap" style="margin-left:12px;font-size:11px;background:var(--bg-panel);color:var(--green);border:1px solid var(--border);padding:2px 4px">
+        <option value="30">30s gap</option>
+        <option value="45" selected>45s gap</option>
+        <option value="90">90s gap</option>
+        <option value="180">3m gap</option>
+      </select>
+    </h2>
+    <div id="conversations" style="display:flex;flex-direction:column;gap:10px"></div>
+  </section>
+
+  <section>
+    <h2>Frequent phrases (last 24h)</h2>
+    <div class="panel" id="phrases" style="font-size:12px;line-height:2.2">
+      <span style="color:var(--green-dim)">Loading…</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Channels (last 24h)</h2>
+    <table id="stats">
+      <thead><tr><th>Ch</th><th class="num">TX count</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last active</th><th class="num">Avg RSSI</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent transmissions
+      <input id="recent-filter" class="search-box" placeholder="filter shown rows…" style="width:200px">
+      <input id="search-all"    class="search-box" placeholder="search ALL events…" style="margin-left:8px">
+      <span id="search-result-count" style="color:var(--amber);font-size:11px;margin-left:8px"></span>
+    </h2>
+    <table id="recent">
+      <thead><tr><th>Time</th><th>Ch</th><th class="num">Dur</th><th class="num">Peak</th><th>Subtone</th><th>Audio</th><th>Transcript</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const fmt = {
+  freq: hz => (hz/1e6).toFixed(4) + " MHz",
+  dur:  s  => s == null ? "—" : s < 60 ? s.toFixed(1)+"s" : (s/60).toFixed(1)+"m",
+  rssi: d  => d == null ? "—" : d.toFixed(1),
+  time: ts => ts ? new Date(ts*1000).toLocaleTimeString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=(Date.now()/1000-ts); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; },
+};
+
+function rssiBar(d) {
+  if (d == null || d < -100) return "";
+  const pct = Math.max(0, Math.min(100, (d + 90) * 2));
+  return `<span class="rssi-bar" style="width:60px"><span class="rssi-fill" style="display:block;width:${pct}%"></span></span>`;
+}
+
+// Consistent color per channel so your eye tracks "Ch 1 is kids, Ch 16 is neighbor".
+// 15 channels in the 462 block — map to a distinguishable palette.
+const CH_COLOR = {
+  1:"#ff6b6b", 2:"#ffa500", 3:"#ffd700", 4:"#8fbc8f", 5:"#4ae04a",
+  6:"#40e0d0", 7:"#4a9eff",15:"#9370db",16:"#ff69b4",17:"#f08080",
+ 18:"#daa520",19:"#b8860b",20:"#7ec8e3",21:"#ee82ee",22:"#a0a0a0",
+};
+function chTag(num) {
+  const c = CH_COLOR[num] || "#888";
+  return `<span class="ch-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">Ch ${num}</span>`;
+}
+
+function transcriptCell(e) {
+  const badge = e.alert_kind ? `<span class="alert-badge ${e.alert_kind}">${e.alert_kind}</span>` : "";
+  const st = e.transcript_status;
+  let body;
+  if (st === "ok" && e.transcript) body = `<span class="transcript">"${e.transcript}"</span>`;
+  else if (st === "pending") body = `<span class="transcript pending">transcribing…</span>`;
+  else if (st === "silent") body = `<span class="transcript empty">(no speech)</span>`;
+  else if (st === "too_short") body = `<span class="transcript empty">(too short)</span>`;
+  else if (st === "failed" || st === "bad_wav" || st === "missing") body = `<span class="transcript empty">—</span>`;
+  else if (!st) body = `<span class="transcript empty">—</span>`;
+  else body = `<span class="transcript empty">${st}</span>`;
+  return body + badge;
+}
+
+function renderSpark(buckets, hours) {
+  const spark = document.getElementById("spark");
+  if (!spark) return;
+  const w = Math.max(400, spark.clientWidth - 20), h = 50, pad = 4;
+  const arr = new Array(hours).fill(0);
+  let max = 1;
+  for (const b of buckets) {
+    const idx = b.hour_bucket;
+    if (idx >= 0 && idx < hours) { arr[idx] = b.tx_count; if (b.tx_count > max) max = b.tx_count; }
+  }
+  const bw = (w - pad*2) / hours;
+  let bars = "";
+  for (let i = 0; i < hours; i++) {
+    const bh = arr[i] ? Math.max(2, (arr[i] / max) * (h - pad*2 - 12)) : 1;
+    const x = pad + i * bw, y = h - pad - bh;
+    const col = arr[i] ? "#6fff9d" : "#164c32";
+    bars += `<rect x="${x+0.5}" y="${y}" width="${Math.max(1, bw-1)}" height="${bh}" fill="${col}" />`;
+    if (i % 6 === 0) bars += `<text x="${x+1}" y="${h-1}" fill="#2e8d5a" font-size="8">-${hours-i}h</text>`;
+  }
+  bars += `<text x="${w-pad-80}" y="10" fill="#ffb347" font-size="9">peak ${max} TX/hr</text>`;
+  spark.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${bars}</svg>`;
+}
+
+async function refresh() {
+  // Skip refresh if any audio is actively playing (prevents DOM rebuild killing playback)
+  const audios = document.querySelectorAll('audio');
+  for (const a of audios) {
+    if (!a.paused && !a.ended) {
+      return;
+    }
+  }
+  try {
+    const [live, stats, recent, hourly, phrases] = await Promise.all([
+      fetch("api/live").then(r => r.json()),
+      fetch("api/stats?hours=24").then(r => r.json()),
+      fetch("api/recent?limit=30").then(r => r.json()),
+      fetch("api/hourly?hours=24").then(r => r.json()),
+      fetch("api/phrases?hours=24&limit=30").then(r => r.json()),
+    ]);
+    const ph = document.getElementById("phrases");
+    if (phrases.phrases && phrases.phrases.length) {
+      const maxN = phrases.phrases[0].n;
+      ph.innerHTML = phrases.phrases.map(p => {
+        const scale = 0.9 + 0.9 * (p.n / maxN);
+        return `<a href="#" onclick="event.preventDefault();if(searchAll){searchAll.value='${p.phrase.replace(/'/g,"\\\\'")}';searchAll.dispatchEvent(new Event('input'));document.getElementById('recent').scrollIntoView({behavior:'smooth'});}" style="display:inline-block;margin-right:14px;margin-bottom:4px;color:var(--green);font-size:${(scale*13).toFixed(0)}px;border-bottom:1px dashed var(--green-deep)">"${p.phrase}"<span style="color:var(--amber);font-size:10px;margin-left:4px">${p.n}×</span></a>`;
+      }).join("");
+    } else if (ph) {
+      ph.innerHTML = '<span style="color:var(--green-dim)">No transcripts yet.</span>';
+    }
+    renderSpark(hourly.buckets || [], hourly.hours || 24);
+
+    document.getElementById("meta").textContent =
+      `center ${(live.center_hz/1e6).toFixed(4)} MHz · ${(live.sample_rate/1e6).toFixed(1)} Msps · sq ${live.squelch_db} dB`;
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+
+    // Last-TX summary line
+    const lastLine = document.getElementById("last-tx");
+    const last = recent.events.find(e => e.end_ts);
+    if (last) {
+      lastLine.innerHTML = `Last TX: <strong>${fmt.ago(last.end_ts)}</strong> on `
+        + `${chTag(last.channel)} · <strong>${fmt.dur(last.duration_s)}</strong> · `
+        + `peak <strong>${fmt.rssi(last.peak_rssi)} dBFS</strong>`;
+    } else {
+      lastLine.textContent = "No activity yet.";
+    }
+
+    const liveTbody = document.querySelector("#live tbody");
+    liveTbody.innerHTML = "";
+    for (const c of live.channels) {
+      const tr = document.createElement("tr");
+      if (c.open) tr.classList.add("open");
+      tr.innerHTML = `
+        <td>${chTag(c.channel)}</td>
+        <td class="freq">${fmt.freq(c.freq_hz)}</td>
+        <td>${fmt.rssi(c.last_rssi)} ${rssiBar(c.last_rssi)}</td>
+        <td>${fmt.rssi(c.peak_rssi)}</td>
+        <td>${fmt.ago(c.last_event_ts)}</td>`;
+      liveTbody.appendChild(tr);
+    }
+
+    const statsTbody = document.querySelector("#stats tbody");
+    statsTbody.innerHTML = "";
+    const top = stats.channels[0];
+    for (const s of stats.channels) {
+      const tr = document.createElement("tr");
+      const hot = top && s.channel === top.channel ? "hot" : "";
+      tr.classList.add("expandable");
+      tr.title = `click to filter Recent to Ch ${s.channel}`;
+      tr.innerHTML = `
+        <td>${chTag(s.channel)}</td>
+        <td class="num ${hot}">${s.tx_count}</td>
+        <td class="num">${fmt.dur(s.total_airtime_s)}</td>
+        <td class="num">${fmt.dur(s.avg_duration_s)}</td>
+        <td>${fmt.ago(s.last_active)}</td>
+        <td class="num">${fmt.rssi(s.avg_peak_rssi)}</td>`;
+      tr.addEventListener("click", () => {
+        if (searchAll) {
+          searchAll.value = String(s.channel);
+          searchAll.dispatchEvent(new Event("input"));
+          document.getElementById("recent").scrollIntoView({behavior:"smooth"});
+        }
+      });
+      statsTbody.appendChild(tr);
+    }
+
+    const rec = document.getElementById("recommend");
+    if (top && top.tx_count >= 3) {
+      rec.innerHTML = `Most-active channel last 24h: <strong>Ch ${top.channel}</strong> — ${top.tx_count} transmissions, ${fmt.dur(top.total_airtime_s)} total airtime, avg RSSI ${fmt.rssi(top.avg_peak_rssi)} dBFS.`;
+    } else {
+      rec.textContent = "Not enough activity yet. Let it run during daytime / evening when kids are typically on-air.";
+    }
+
+    // Incremental update — never destroy rows that are already rendered
+    // (destroying them kills any <audio> element mid-playback).
+    const recTbody = document.querySelector("#recent tbody");
+    const existing = new Map();
+    for (const row of recTbody.querySelectorAll("tr[data-event-id]")) {
+      existing.set(row.dataset.eventId, row);
+    }
+    const wantedIds = new Set(recent.events.map(e => String(e.id)));
+    // Remove rows for events that are no longer in the recent list.
+    for (const [id, row] of existing) {
+      if (!wantedIds.has(id)) row.remove();
+    }
+    // Add or skip rows in the correct position (newest first per API order).
+    let prev = null;
+    for (const e of recent.events) {
+      let tr = existing.get(String(e.id));
+      const audioHtml = e.clip_path
+        ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px" onclick="event.stopPropagation()"></audio>`
+        : "—";
+      if (!tr) {
+        tr = document.createElement("tr");
+        tr.dataset.eventId = String(e.id);
+        tr.classList.add("expandable");
+        if (e.alert_kind) tr.classList.add("alert");
+        tr.innerHTML = `
+          <td>${fmt.time(e.start_ts)}</td>
+          <td>${chTag(e.channel)}</td>
+          <td class="num">${fmt.dur(e.duration_s)}</td>
+          <td class="num">${fmt.rssi(e.peak_rssi)}</td>
+          <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
+          <td class="audio-cell">${audioHtml}</td>
+          <td class="transcript-cell">${transcriptCell(e)}</td>`;
+        tr.addEventListener("click", () => toggleDetail(e.id, tr));
+      } else {
+        const ac = tr.querySelector(".audio-cell");
+        if (ac && ac.dataset.hasClip !== String(!!e.clip_path)) {
+          ac.innerHTML = audioHtml;
+          ac.dataset.hasClip = String(!!e.clip_path);
+        }
+        const tc = tr.querySelector(".transcript-cell");
+        if (tc) tc.innerHTML = transcriptCell(e);
+        if (e.alert_kind && !tr.classList.contains("alert")) tr.classList.add("alert");
+        const durCell = tr.querySelectorAll("td")[2];
+        if (durCell && durCell.textContent === "—") durCell.textContent = fmt.dur(e.duration_s);
+      }
+      const ac = tr.querySelector(".audio-cell");
+      if (ac && !ac.dataset.hasClip) ac.dataset.hasClip = String(!!e.clip_path);
+      // Position it after prev (preserves server order without touching unchanged rows).
+      if (prev === null) {
+        if (recTbody.firstChild !== tr) recTbody.insertBefore(tr, recTbody.firstChild);
+      } else if (prev.nextSibling !== tr) {
+        recTbody.insertBefore(tr, prev.nextSibling);
+      }
+      prev = tr;
+    }
+  } catch (e) {
+    document.getElementById("updated").textContent = "error: " + e;
+  }
+}
+
+// Client-side filter for rendered rows
+const filterInput = document.getElementById("recent-filter");
+if (filterInput) {
+  filterInput.addEventListener("input", () => {
+    const q = filterInput.value.trim().toLowerCase();
+    for (const row of document.querySelectorAll("#recent tbody tr.expandable")) {
+      row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? "" : "none";
+    }
+  });
+}
+
+// Server-side search across ALL events
+let searchTimer = null;
+const searchAll = document.getElementById("search-all");
+const srCount = document.getElementById("search-result-count");
+if (searchAll) {
+  searchAll.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = searchAll.value.trim();
+    if (!q) { srCount.textContent = ""; refresh(); return; }
+    searchTimer = setTimeout(async () => {
+      const resp = await fetch("api/search?q=" + encodeURIComponent(q) + "&limit=200").then(r => r.json());
+      srCount.textContent = `${resp.results.length} matches`;
+      const body = document.querySelector("#recent tbody");
+      body.innerHTML = "";
+      for (const e of resp.results) {
+        const tr = document.createElement("tr");
+        tr.dataset.eventId = String(e.id);
+        tr.classList.add("expandable");
+        if (e.alert_kind) tr.classList.add("alert");
+        const audio = e.clip_path
+          ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px" onclick="event.stopPropagation()"></audio>`
+          : "—";
+        tr.innerHTML = `
+          <td>${fmt.time(e.start_ts)}</td>
+          <td>${chTag(e.channel)}</td>
+          <td class="num">${fmt.dur(e.duration_s)}</td>
+          <td class="num">${fmt.rssi(e.peak_rssi)}</td>
+          <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
+          <td>${audio}</td>
+          <td class="transcript-cell">${transcriptCell(e)}</td>`;
+        tr.addEventListener("click", () => toggleDetail(e.id, tr));
+        body.appendChild(tr);
+      }
+    }, 250);
+  });
+}
+
+async function toggleDetail(id, row) {
+  const next = row.nextSibling;
+  if (next && next.classList && next.classList.contains("detail") && next.dataset.forId === String(id)) {
+    next.remove();
+    row.classList.remove("expanded");
+    return;
+  }
+  for (const d of document.querySelectorAll("tr.detail")) d.remove();
+  for (const r of document.querySelectorAll("tr.expanded")) r.classList.remove("expanded");
+  const e = await fetch(`api/event/${id}`).then(r => r.json());
+  const related = (e.related || []).slice(0, 6).map(r =>
+    `<a href="#" onclick="event.preventDefault();document.querySelector('tr[data-event-id=&quot;${r.id}&quot;]')?.click();">${fmt.time(r.start_ts)} ${fmt.dur(r.duration_s)}</a>`
+  ).join("");
+  const alertHtml = e.alert_kind
+    ? `<div class="kv"><span class="k">alert</span><span class="v" style="color:var(--hot)">${e.alert_kind} ("${e.alert_match||""}")</span></div>` : "";
+  const det = document.createElement("tr");
+  det.className = "detail";
+  det.dataset.forId = String(id);
+  det.innerHTML = `<td colspan="7">
+    <div>
+      <span class="kv"><span class="k">ID</span><span class="v">${e.id}</span></span>
+      <span class="kv"><span class="k">Ch</span><span class="v">${e.channel}</span></span>
+      <span class="kv"><span class="k">Freq</span><span class="v">${(e.freq_hz/1e6).toFixed(4)} MHz</span></span>
+      <span class="kv"><span class="k">Start</span><span class="v">${fmt.time(e.start_ts)}</span></span>
+      <span class="kv"><span class="k">Duration</span><span class="v">${fmt.dur(e.duration_s)}</span></span>
+      <span class="kv"><span class="k">Peak RSSI</span><span class="v">${fmt.rssi(e.peak_rssi)} dBFS</span></span>
+      ${alertHtml}
+    </div>
+    ${e.transcript ? `<div class="big-transcript">"${e.transcript.replace(/</g,"&lt;")}"</div>` : ''}
+    ${e.clip_path ? `<audio class="big-audio" controls preload="none" src="api/clip/${e.id}"></audio>` : '<div class="kv" style="color:var(--dim)">(audio clip pruned)</div>'}
+    ${related ? `<div class="related">related on Ch ${e.channel}: ${related}</div>` : ''}
+  </td>`;
+  row.classList.add("expanded");
+  row.parentNode.insertBefore(det, row.nextSibling);
+}
+refresh();
+setInterval(refresh, 5000);
+
+// --- Conversations -----------------------------------------------------------
+let _convPlayState = { playing: false, convId: null, idx: 0, audioEl: null };
+
+function renderConversations(data) {
+  const wrap = document.getElementById("conversations");
+  const countEl = document.getElementById("conv-count");
+  if (!wrap) return;
+  const convs = data.conversations || [];
+  countEl.textContent = convs.length ? convs.length + " conversations" : "";
+  if (!convs.length) {
+    wrap.innerHTML = '<div style="color:var(--green-dim);padding:8px">No multi-TX conversations detected in the last 24h. Try increasing the gap.</div>';
+    return;
+  }
+  wrap.innerHTML = "";
+  for (const conv of convs) {
+    const card = document.createElement("div");
+    card.className = "conv-card";
+    card.dataset.convId = conv.id;
+    const spanTs = conv.end_ts - conv.start_ts;
+    const spanStr = spanTs < 60 ? Math.round(spanTs) + "s span" : (spanTs / 60).toFixed(1) + "m span";
+    card.innerHTML =
+      '<div class="conv-header">' +
+        chTag(conv.channel) +
+        ' <span style="color:var(--green-dim);margin:0 8px">' + fmt.time(conv.start_ts) + ' — ' + fmt.time(conv.end_ts) + '</span>' +
+        '<span style="color:var(--amber)">' + conv.event_count + ' TX</span>' +
+        ' <span style="color:var(--green-dim)">' + spanStr + ' / ' + fmt.dur(conv.duration_s) + ' airtime</span>' +
+        ' <button class="conv-play-all" data-conv="' + conv.id + '">Play All</button>' +
+        ' <button class="conv-stop" data-conv="' + conv.id + '" style="display:none">Stop</button>' +
+      '</div>' +
+      '<div class="conv-timeline">' +
+        conv.events.map(function(e, i) {
+          var maxDur = Math.max.apply(null, conv.events.map(function(x){ return x.duration_s || 1; }));
+          var barPct = Math.max(5, ((e.duration_s || 0) / maxDur) * 100);
+          var txText = e.transcript && e.transcript_status === "ok" ? '"' + e.transcript + '"' : (e.transcript_status === "pending" ? "transcribing..." : "");
+          var clipBtn = e.clip_path ? '<button class="conv-clip-play" data-event="' + e.id + '" data-conv="' + conv.id + '" data-idx="' + i + '" title="Play clip">&#9654;</button>' : '';
+          return '<div class="conv-evt" data-conv="' + conv.id + '" data-idx="' + i + '">' +
+            '<span class="conv-ts">' + fmt.time(e.start_ts) + '</span>' +
+            clipBtn +
+            '<span class="conv-dur-bar" style="width:' + barPct + '%">' + fmt.dur(e.duration_s) + '</span>' +
+            (e.peak_rssi != null ? '<span class="conv-rssi">' + fmt.rssi(e.peak_rssi) + ' dB</span>' : '') +
+            '<span class="conv-txt">' + txText + '</span>' +
+          '</div>';
+        }).join("") +
+      '</div>';
+    wrap.appendChild(card);
+  }
+  // Wire up buttons
+  wrap.querySelectorAll(".conv-play-all").forEach(function(btn) {
+    btn.addEventListener("click", function(ev) {
+      ev.stopPropagation();
+      startConvPlayback(btn.dataset.conv, convs);
+    });
+  });
+  wrap.querySelectorAll(".conv-stop").forEach(function(btn) {
+    btn.addEventListener("click", function(ev) {
+      ev.stopPropagation();
+      stopConvPlayback();
+    });
+  });
+  wrap.querySelectorAll(".conv-clip-play").forEach(function(btn) {
+    btn.addEventListener("click", function(ev) {
+      ev.stopPropagation();
+      var eid = parseInt(btn.dataset.event);
+      playSingleClip(eid, btn.dataset.conv, parseInt(btn.dataset.idx));
+    });
+  });
+}
+
+function playSingleClip(eventId, convId, idx) {
+  stopConvPlayback();
+  var audio = new Audio("api/clip/" + eventId);
+  _convPlayState = { playing: true, convId: convId, idx: idx, audioEl: audio };
+  highlightConvRow(convId, idx, true);
+  audio.addEventListener("ended", function() {
+    highlightConvRow(convId, idx, false);
+    _convPlayState = { playing: false, convId: null, idx: 0, audioEl: null };
+  });
+  audio.play();
+}
+
+function startConvPlayback(convId, allConvs) {
+  stopConvPlayback();
+  var conv = allConvs.find(function(c) { return c.id === convId; });
+  if (!conv || !conv.events.length) return;
+  // Show stop button, hide play button
+  var card = document.querySelector('.conv-card[data-conv-id="' + convId + '"]');
+  if (card) {
+    var pb = card.querySelector(".conv-play-all");
+    var sb = card.querySelector(".conv-stop");
+    if (pb) pb.style.display = "none";
+    if (sb) sb.style.display = "inline-block";
+  }
+  playConvIdx(convId, conv.events, 0);
+}
+
+function playConvIdx(convId, events, idx) {
+  if (idx >= events.length) { stopConvPlayback(); return; }
+  var e = events[idx];
+  if (!e.clip_path) { playConvIdx(convId, events, idx + 1); return; }
+  var audio = new Audio("api/clip/" + e.id);
+  _convPlayState = { playing: true, convId: convId, idx: idx, audioEl: audio };
+  highlightConvRow(convId, idx, true);
+  audio.addEventListener("ended", function() {
+    highlightConvRow(convId, idx, false);
+    playConvIdx(convId, events, idx + 1);
+  });
+  audio.addEventListener("error", function() {
+    highlightConvRow(convId, idx, false);
+    playConvIdx(convId, events, idx + 1);
+  });
+  audio.play();
+}
+
+function stopConvPlayback() {
+  if (_convPlayState.audioEl) {
+    try { _convPlayState.audioEl.pause(); } catch(ex) {}
+    highlightConvRow(_convPlayState.convId, _convPlayState.idx, false);
+  }
+  // Reset all play/stop buttons
+  document.querySelectorAll(".conv-play-all").forEach(function(b) { b.style.display = "inline-block"; });
+  document.querySelectorAll(".conv-stop").forEach(function(b) { b.style.display = "none"; });
+  _convPlayState = { playing: false, convId: null, idx: 0, audioEl: null };
+}
+
+function highlightConvRow(convId, idx, on) {
+  var row = document.querySelector('.conv-evt[data-conv="' + convId + '"][data-idx="' + idx + '"]');
+  if (row) {
+    if (on) row.classList.add("conv-playing");
+    else row.classList.remove("conv-playing");
+  }
+}
+
+// Fetch conversations alongside other data
+async function refreshConversations() {
+  try {
+    var gapSel = document.getElementById("conv-gap");
+    var gap = gapSel ? gapSel.value : "45";
+    var data = await fetch("api/conversations?hours=24&gap=" + gap).then(function(r) { return r.json(); });
+    renderConversations(data);
+  } catch(ex) {
+    console.error("conversations fetch failed", ex);
+  }
+}
+
+// Hook into main refresh
+const _origRefresh = refresh;
+// We cannot easily wrap refresh since it is already defined.
+// Instead, we call refreshConversations from the interval.
+// But we need the same audio guard. Let's just call it after refresh.
+setInterval(function() { refreshConversations(); }, 5500);
+// Initial load
+refreshConversations();
+
+// Gap dropdown change triggers immediate refresh
+var _gapSel = document.getElementById("conv-gap");
+if (_gapSel) {
+  _gapSel.addEventListener("change", function() { refreshConversations(); });
+}
+</script>
+</body>
+</html>

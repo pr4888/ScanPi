@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi :: ISM Sweep (YS1)</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; ISM Sweep (YARD Stick One)</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+
+  <section>
+    <h2>Band &middot; threshold
+      <span style="margin-left:12px;font-size:11px;color:var(--green-dim)">(click a band to retune)</span>
+    </h2>
+    <div class="panel" id="band-controls" style="padding:10px">
+      <div id="band-buttons" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+      <div style="display:flex;gap:14px;font-size:11px;align-items:center;flex-wrap:wrap">
+        <span class="sub">threshold dBm:</span>
+        <input id="threshold" type="number" step="5" style="background:var(--bg-panel);border:1px solid var(--border);color:var(--amber);padding:3px 8px;width:70px;font-family:inherit">
+        <span class="sub">modulation:</span>
+        <select id="modulation" style="background:var(--bg-panel);border:1px solid var(--border);color:var(--green);padding:3px 8px;font-family:inherit">
+          <option value="ask_ook">ASK/OOK</option>
+          <option value="fsk2">2-FSK</option>
+          <option value="fsk4">4-FSK</option>
+          <option value="msk">MSK</option>
+          <option value="gfsk">GFSK</option>
+        </select>
+        <button onclick="applyConfig()">apply</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Spectrum — live sweep</h2>
+    <div class="panel" id="spectrum" style="min-height:160px"></div>
+  </section>
+
+  <section>
+    <h2>Burst frequency histogram (last 24h)</h2>
+    <div class="panel" id="histogram" style="min-height:70px"></div>
+  </section>
+
+  <section>
+    <h2>Recent bursts</h2>
+    <table id="bursts">
+      <thead><tr><th>Time</th><th class="num">Freq (MHz)</th><th class="num">RSSI (dBm)</th><th>Modulation</th><th>Bytes (hex)</th><th>Guess</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+</main>
+
+<script>
+const fmt = {
+  time: ts => ts ? new Date(ts*1000).toLocaleTimeString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=Date.now()/1000-(+ts); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; },
+};
+
+function drawSpectrum(live) {
+  const el = document.getElementById("spectrum");
+  const w = Math.max(400, el.clientWidth - 20), h = 150, padL = 36, padR = 8, padT = 8, padB = 18;
+  const data = live.spectrum || [];
+  if (!data.length) { el.innerHTML = '<div style="color:var(--green-dim);font-size:11px;padding:10px">No sweep data yet.</div>'; return; }
+  const freqs = data.map(d => d.freq_hz);
+  const rssis = data.map(d => d.rssi_dbm);
+  const fMin = Math.min(...freqs), fMax = Math.max(...freqs);
+  const rMin = Math.min(-110, Math.min(...rssis) - 5);
+  const rMax = Math.max(-30,  Math.max(...rssis) + 5);
+  const xFor = f => padL + (w - padL - padR) * (f - fMin) / Math.max(1, fMax - fMin);
+  const yFor = r => padT + (h - padT - padB) * (1 - (r - rMin) / Math.max(1, rMax - rMin));
+  const pts = data.map(d => `${xFor(d.freq_hz).toFixed(1)},${yFor(d.rssi_dbm).toFixed(1)}`).join(" ");
+  const thr = live.threshold_dbm;
+  const thrY = yFor(thr).toFixed(1);
+  // x-axis ticks every 2 MHz
+  let ticks = "";
+  for (let mhz = Math.ceil(fMin/1e6/2)*2; mhz <= Math.floor(fMax/1e6); mhz += 2) {
+    const x = xFor(mhz*1e6).toFixed(1);
+    ticks += `<line x1="${x}" y1="${h-padB}" x2="${x}" y2="${h-padB+3}" stroke="#2e8d5a"/>`;
+    ticks += `<text x="${x}" y="${h-2}" fill="#2e8d5a" font-size="9" text-anchor="middle">${mhz}</text>`;
+  }
+  // y-axis labels
+  let yLbl = "";
+  for (const r of [-50, -70, -90, -110]) {
+    const y = yFor(r).toFixed(1);
+    yLbl += `<text x="4" y="${y+3}" fill="#2e8d5a" font-size="9">${r}</text>`;
+    yLbl += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="#10211a" stroke-dasharray="2,3"/>`;
+  }
+  el.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+    ${yLbl}${ticks}
+    <line x1="${padL}" y1="${thrY}" x2="${w-padR}" y2="${thrY}" stroke="#ffb347" stroke-dasharray="4,3"/>
+    <text x="${w-padR-4}" y="${thrY-3}" fill="#ffb347" font-size="9" text-anchor="end">threshold ${thr} dBm</text>
+    <polyline points="${pts}" fill="none" stroke="#6fff9d" stroke-width="1.5"/>
+  </svg>`;
+}
+
+function drawHistogram(bins) {
+  const el = document.getElementById("histogram");
+  if (!bins.length) { el.innerHTML = '<div style="color:var(--green-dim);font-size:11px;padding:10px">No bursts captured yet.</div>'; return; }
+  const maxN = Math.max(...bins.map(b => b.n));
+  const top = bins.slice(0, 15);
+  el.innerHTML = top.map(b => {
+    const pct = (b.n / maxN * 100).toFixed(0);
+    return `<div style="display:flex;align-items:center;gap:10px;font-size:12px;margin:2px 0">
+      <span style="color:var(--amber);font-variant-numeric:tabular-nums;width:80px">${(b.freq_hz/1e6).toFixed(3)} MHz</span>
+      <span style="background:var(--green-glow);height:8px;width:${pct*3}px;display:inline-block;opacity:.7"></span>
+      <span style="color:var(--green-dim);font-size:11px">${b.n}×</span>
+    </div>`;
+  }).join("");
+}
+
+let currentBand = "ism-915";
+let bandPresets = {};
+
+async function loadBands() {
+  const data = await fetch("api/bands").then(r => r.json());
+  currentBand = data.current;
+  bandPresets = data.presets;
+  const div = document.getElementById("band-buttons");
+  div.innerHTML = Object.entries(bandPresets).map(([k, v]) =>
+    `<button onclick="selectBand('${k}')" class="${k===currentBand?'':'secondary'}"
+             title="${v.start_mhz}-${v.stop_mhz} MHz">${k}</button>`
+  ).join("");
+}
+
+async function selectBand(band) {
+  await fetch("api/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({band}),
+  });
+  await loadBands();
+  refresh();
+}
+
+async function applyConfig() {
+  const thr = parseFloat(document.getElementById("threshold").value);
+  const mod = document.getElementById("modulation").value;
+  await fetch("api/configure", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({threshold_dbm: thr, modulation: mod}),
+  });
+  refresh();
+}
+
+async function refresh() {
+  try {
+    const [live, bursts, hist] = await Promise.all([
+      fetch("api/live").then(r => r.json()),
+      fetch("api/bursts?limit=50").then(r => r.json()),
+      fetch("api/histogram?hours=24").then(r => r.json()),
+    ]);
+    document.getElementById("meta").textContent =
+      live.running
+        ? `${live.start_mhz}-${live.stop_mhz} MHz · ${live.sweep_count} sweeps · threshold ${live.threshold_dbm} dBm`
+        : "worker stopped";
+    // Sync form fields to current values
+    const thrInp = document.getElementById("threshold");
+    if (thrInp && document.activeElement !== thrInp) thrInp.value = live.threshold_dbm;
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    drawSpectrum(live);
+    drawHistogram(hist.bins);
+    const body = document.querySelector("#bursts tbody");
+    body.innerHTML = "";
+    for (const b of bursts.bursts) {
+      const tr = document.createElement("tr");
+      const hex = b.bytes_hex || "";
+      const hexShow = hex.length > 40 ? hex.slice(0,40)+"…" : hex || "—";
+      const noteColor = b.note && b.note.includes("lora") ? "color:var(--amber);font-weight:600"
+                      : b.note && b.note.includes("zwave") ? "color:#c88fff;font-weight:600"
+                      : b.note ? "color:var(--green-dim)" : "color:var(--green-deep)";
+      tr.innerHTML = `
+        <td>${fmt.time(b.ts)}</td>
+        <td class="num">${(b.freq_hz/1e6).toFixed(4)}</td>
+        <td class="num">${(+b.rssi_dbm).toFixed(1)}</td>
+        <td>${b.modulation || "—"}</td>
+        <td style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--green)">${hexShow}</td>
+        <td style="${noteColor}">${b.note || ""}</td>`;
+      body.appendChild(tr);
+    }
+  } catch (e) {
+    document.getElementById("updated").textContent = "error: " + e;
+  }
+}
+loadBands();
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

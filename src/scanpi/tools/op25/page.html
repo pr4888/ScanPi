@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi :: P25 Trunking</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; P25 Trunking</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="last-line" id="last-line">Waiting for activity…</div>
+  <div id="alert-banner"></div>
+  <div class="recommend" id="active">No active calls.</div>
+
+  <section>
+    <h2>Activity — last 24h
+      <a href="api/export.csv" style="margin-left:12px;font-size:11px">[export CSV]</a>
+    </h2>
+    <div id="spark" style="background:var(--bg-panel);border:1px solid var(--border);padding:8px;margin-bottom:10px"></div>
+  </section>
+
+  <section>
+    <h2>Conversations
+      <span id="conv-count" style="font-size:11px;color:var(--amber);margin-left:8px"></span>
+      <select id="conv-gap" style="margin-left:12px;font-size:11px;background:var(--bg-panel);color:var(--fg);border:1px solid var(--border);padding:2px 6px">
+        <option value="30">30s gap</option>
+        <option value="45" selected>45s gap</option>
+        <option value="90">90s gap</option>
+        <option value="180">3m gap</option>
+      </select>
+    </h2>
+    <div id="conversations" style="display:flex;flex-direction:column;gap:12px"></div>
+  </section>
+
+  <section>
+    <h2>Frequent phrases (last 24h)</h2>
+    <div class="panel" id="phrases" style="font-size:12px;line-height:2.2">
+      <span style="color:var(--green-dim)">Loading…</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Talkgroups (last 24h)</h2>
+    <table id="stats">
+      <thead><tr><th>TGID</th><th>Name</th><th>Category</th><th class="num">Calls</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent calls
+      <input id="recent-filter" class="search-box" placeholder="filter shown rows…" style="width:200px">
+      <input id="search-all"    class="search-box" placeholder="search ALL calls (transcripts, TGs)…" style="margin-left:8px">
+      <span id="search-result-count" style="color:var(--amber);font-size:11px;margin-left:8px"></span>
+    </h2>
+    <table id="recent">
+      <thead><tr><th>Time</th><th>TGID</th><th>Name</th><th>Category</th><th class="num">Dur</th><th class="num">Freq</th><th>Audio</th><th>Transcript</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const CATEGORY_STYLE = {
+  police:  { bg: "#0a1a33", fg: "#6fa8ff", border: "#244b8a" },
+  fire:    { bg: "#331010", fg: "#ff8888", border: "#7a2525" },
+  ems:     { bg: "#331b0a", fg: "#ffb366", border: "#7a4a20" },
+  transit: { bg: "#2a0a33", fg: "#c88fff", border: "#5a1f75" },
+  utility: { bg: "#0a332c", fg: "#6fffe0", border: "#1d6b5a" },
+  school:  { bg: "#333008", fg: "#ffe066", border: "#75651a" },
+  other:   { bg: "#111518", fg: "#88a0aa", border: "#2a3640" },
+};
+
+const fmt = {
+  dur:  s => s == null ? "—" : s < 60 ? (+s).toFixed(1)+"s" : ((+s)/60).toFixed(1)+"m",
+  freq: mhz => mhz == null ? "—" : (+mhz).toFixed(4)+" MHz",
+  time: ts => ts ? new Date((+ts)*1000).toLocaleTimeString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=(Date.now()/1000-(+ts)); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; },
+};
+
+function catTag(cat) {
+  const s = CATEGORY_STYLE[cat] || CATEGORY_STYLE.other;
+  return `<span class="ch-tag" style="background:${s.bg};color:${s.fg};border-color:${s.border}">${cat||"other"}</span>`;
+}
+
+function transcriptCell(e) {
+  const badge = e.alert_kind ? `<span class="alert-badge ${e.alert_kind}">${e.alert_kind}</span>` : "";
+  const st = e.transcript_status;
+  let body;
+  if (st === "ok" && e.transcript) body = `<span class="transcript">"${e.transcript}"</span>`;
+  else if (st === "pending")  body = `<span class="transcript pending">transcribing…</span>`;
+  else if (st === "silent")   body = `<span class="transcript empty">(no speech)</span>`;
+  else if (st === "too_short")body = `<span class="transcript empty">(too short)</span>`;
+  else if (!st) body = `<span class="transcript empty">—</span>`;
+  else body = `<span class="transcript empty">${st}</span>`;
+  return body + badge;
+}
+
+function renderSpark(buckets, hours) {
+  const spark = document.getElementById("spark");
+  const w = Math.max(400, spark.clientWidth - 20), h = 50, pad = 4;
+  const arr = new Array(hours).fill(0);
+  let max = 1;
+  for (const b of buckets) {
+    const idx = b.hour_bucket;
+    if (idx >= 0 && idx < hours) {
+      arr[idx] = b.call_count;
+      if (b.call_count > max) max = b.call_count;
+    }
+  }
+  const bw = (w - pad*2) / hours;
+  let bars = "";
+  for (let i = 0; i < hours; i++) {
+    const bh = arr[i] ? Math.max(2, (arr[i] / max) * (h - pad*2 - 12)) : 1;
+    const x = pad + i * bw;
+    const y = h - pad - bh;
+    const col = arr[i] ? "#6fff9d" : "#164c32";
+    bars += `<rect x="${x+0.5}" y="${y}" width="${Math.max(1, bw-1)}" height="${bh}" fill="${col}" />`;
+    // Tick labels every 6h
+    if (i % 6 === 0) {
+      bars += `<text x="${x+1}" y="${h-1}" fill="#2e8d5a" font-size="8">-${hours-i}h</text>`;
+    }
+  }
+  bars += `<text x="${w-pad-80}" y="10" fill="#ffb347" font-size="9">peak ${max} calls/hr</text>`;
+  spark.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${bars}</svg>`;
+}
+
+async function refresh() {
+  // Skip refresh if any audio is playing — prevents DOM churn from killing playback
+  const audios = document.querySelectorAll('audio');
+  for (const a of audios) { if (!a.paused && !a.ended) return; }
+  try {
+    const [live, stats, recent, hourly, alerts, phrases] = await Promise.all([
+      fetch("api/live").then(r => r.json()),
+      fetch("api/stats?hours=24").then(r => r.json()),
+      fetch("api/recent?limit=50").then(r => r.json()),
+      fetch("api/hourly?hours=24").then(r => r.json()),
+      fetch("api/alerts?limit=5").then(r => r.json()),
+      fetch("api/phrases?hours=24&limit=30").then(r => r.json()),
+    ]);
+    // Phrases block — click a phrase to search it
+    const ph = document.getElementById("phrases");
+    if (phrases.phrases && phrases.phrases.length) {
+      const maxN = phrases.phrases[0].n;
+      ph.innerHTML = phrases.phrases.map(p => {
+        const scale = 0.9 + 0.9 * (p.n / maxN);
+        return `<a href="#" onclick="event.preventDefault();searchAll.value='${p.phrase.replace(/'/g,"\\\\'")}';searchAll.dispatchEvent(new Event('input'));document.getElementById('recent').scrollIntoView({behavior:'smooth'});" style="display:inline-block;margin-right:14px;margin-bottom:4px;color:var(--green);font-size:${(scale*13).toFixed(0)}px;border-bottom:1px dashed var(--green-deep)">"${p.phrase}"<span style="color:var(--amber);font-size:10px;margin-left:4px">${p.n}×</span></a>`;
+      }).join("");
+    } else {
+      ph.innerHTML = '<span style="color:var(--green-dim)">No transcripts yet.</span>';
+    }
+    renderSpark(hourly.buckets || [], hourly.hours || 24);
+
+    // Alert banner
+    const ab = document.getElementById("alert-banner");
+    if (alerts.alerts && alerts.alerts.length) {
+      const lines = alerts.alerts.slice(0, 3).map(a =>
+        `<span class="alert-badge ${a.alert_kind}">${a.alert_kind}</span> `
+        + `<strong>${a.tg_name || "TG-"+a.tgid}</strong>: `
+        + `"${(a.transcript || "").replace(/</g,"&lt;")}" `
+        + `<span class="alert-ago">${fmt.ago(a.start_ts)}</span>`
+      ).join("<br>");
+      const counts = Object.entries(alerts.counts_24h || {}).map(([k,v]) => `${k}:${v}`).join(" · ");
+      ab.className = "alert-banner";
+      ab.innerHTML = `<div style="color:var(--hot);font-weight:600;margin-bottom:6px">ALERTS — last 24h: ${counts || "none"}</div>${lines}`;
+    } else {
+      ab.className = "";
+      ab.innerHTML = "";
+    }
+
+    document.getElementById("meta").textContent =
+      live.running
+        ? `CC ${live.cc_freq_mhz ? (+live.cc_freq_mhz).toFixed(5)+" MHz" : "acquiring…"} · pid ${live.pid||"?"}`
+        : "decoder stopped";
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+
+    // Active calls banner
+    const act = document.getElementById("active");
+    if (live.active_calls && live.active_calls.length) {
+      act.innerHTML = "<strong>LIVE:</strong> " + live.active_calls.map(c => {
+        const tg = stats.talkgroups.find(t => t.tgid === c.tgid);
+        const name = tg ? tg.tg_name : `TG-${c.tgid}`;
+        return `${name} (${c.tgid}) · ${(+c.freq_mhz).toFixed(4)} MHz · ${c.elapsed_s}s`;
+      }).join(" &nbsp;|&nbsp; ");
+    } else {
+      act.innerHTML = "No active calls.";
+    }
+
+    // Last-call line (from recent feed)
+    const lastLine = document.getElementById("last-line");
+    const last = recent.calls.find(c => c.end_ts);
+    if (last) {
+      lastLine.innerHTML = `Last call: <strong>${fmt.ago(last.end_ts)}</strong> · `
+        + `${last.tg_name || "TG-"+last.tgid} ${catTag(last.category||"other")} · `
+        + `<strong>${fmt.dur(last.duration_s)}</strong>`;
+    } else {
+      lastLine.textContent = "Waiting for activity…";
+    }
+
+    // Stats table
+    const st = document.querySelector("#stats tbody");
+    st.innerHTML = "";
+    for (const t of stats.talkgroups) {
+      const tr = document.createElement("tr");
+      tr.classList.add("expandable");
+      tr.title = `click to filter Recent to TG ${t.tgid}`;
+      tr.innerHTML = `
+        <td>${t.tgid}</td>
+        <td>${t.tg_name || ""}</td>
+        <td>${catTag(t.category||"other")}</td>
+        <td class="num">${t.call_count}</td>
+        <td class="num">${fmt.dur(t.total_airtime_s)}</td>
+        <td class="num">${fmt.dur(t.avg_duration_s)}</td>
+        <td>${fmt.ago(t.last_active)}</td>`;
+      tr.addEventListener("click", () => {
+        searchAll.value = t.tg_name || String(t.tgid);
+        searchAll.dispatchEvent(new Event("input"));
+        document.getElementById("recent").scrollIntoView({behavior:"smooth"});
+      });
+      st.appendChild(tr);
+    }
+
+    // Recent (incremental — preserve <audio> playback)
+    const body = document.querySelector("#recent tbody");
+    const existing = new Map();
+    for (const row of body.querySelectorAll("tr[data-call-id]")) {
+      existing.set(row.dataset.callId, row);
+    }
+    const wanted = new Set(recent.calls.map(c => String(c.id)));
+    for (const [id, row] of existing) {
+      if (!wanted.has(id)) row.remove();
+    }
+    let prev = null;
+    for (const c of recent.calls) {
+      let tr = existing.get(String(c.id));
+      const audioHtml = c.clip_path
+        ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
+        : "—";
+      if (!tr) {
+        tr = document.createElement("tr");
+        tr.dataset.callId = String(c.id);
+        tr.classList.add("expandable");
+        if (c.alert_kind) tr.classList.add("alert");
+        tr.innerHTML = `
+          <td>${fmt.time(c.start_ts)}</td>
+          <td>${c.tgid}</td>
+          <td>${c.tg_name || ""}</td>
+          <td>${catTag(c.category||"other")}</td>
+          <td class="num">${fmt.dur(c.duration_s)}</td>
+          <td class="num">${fmt.freq(c.freq_mhz)}</td>
+          <td class="audio-cell">${audioHtml}</td>
+          <td class="transcript-cell">${transcriptCell(c)}</td>`;
+        tr.addEventListener("click", e => toggleDetail(c.id, tr));
+      } else {
+        // Update audio cell only if it changed (avoids restarting a playing <audio>)
+        const ac = tr.querySelector(".audio-cell");
+        if (ac && ac.dataset.hasClip !== String(!!c.clip_path)) {
+          ac.innerHTML = audioHtml;
+          ac.dataset.hasClip = String(!!c.clip_path);
+        }
+        const tc = tr.querySelector(".transcript-cell");
+        if (tc) tc.innerHTML = transcriptCell(c);
+        // Also update the alert class if a transcript just arrived
+        if (c.alert_kind && !tr.classList.contains("alert")) tr.classList.add("alert");
+        // And duration cell if it was open-ended
+        const durCell = tr.querySelectorAll("td")[4];
+        if (durCell && durCell.textContent === "—") durCell.textContent = fmt.dur(c.duration_s);
+      }
+      // Set initial dataset for next tick
+      const ac = tr.querySelector(".audio-cell");
+      if (ac && !ac.dataset.hasClip) ac.dataset.hasClip = String(!!c.clip_path);
+      if (prev === null) {
+        if (body.firstChild !== tr) body.insertBefore(tr, body.firstChild);
+      } else if (prev.nextSibling !== tr) {
+        body.insertBefore(tr, prev.nextSibling);
+      }
+      prev = tr;
+    }
+  } catch (err) {
+    document.getElementById("updated").textContent = "error: " + err;
+  }
+}
+// Client-side filter for currently-rendered rows
+const filterInput = document.getElementById("recent-filter");
+filterInput.addEventListener("input", () => {
+  const q = filterInput.value.trim().toLowerCase();
+  for (const row of document.querySelectorAll("#recent tbody tr.expandable")) {
+    row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? "" : "none";
+  }
+});
+
+// Server-side search across ALL calls (debounced)
+let searchTimer = null;
+const searchAll = document.getElementById("search-all");
+const srCount = document.getElementById("search-result-count");
+searchAll.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchAll.value.trim();
+  if (!q) { srCount.textContent = ""; refresh(); return; }
+  searchTimer = setTimeout(async () => {
+    const resp = await fetch("api/search?q=" + encodeURIComponent(q) + "&limit=200").then(r => r.json());
+    srCount.textContent = `${resp.results.length} matches`;
+    // Replace Recent tbody with search results
+    renderRecentResults(resp.results);
+  }, 250);
+});
+
+function renderRecentResults(calls) {
+  const body = document.querySelector("#recent tbody");
+  body.innerHTML = "";
+  for (const c of calls) {
+    const tr = document.createElement("tr");
+    tr.dataset.callId = String(c.id);
+    tr.classList.add("expandable");
+    if (c.alert_kind) tr.classList.add("alert");
+    const audio = c.clip_path
+      ? `<audio controls preload="none" src="api/clip/${c.id}" style="height:26px;width:180px" onclick="event.stopPropagation()"></audio>`
+      : "—";
+    tr.innerHTML = `
+      <td>${fmt.time(c.start_ts)}</td>
+      <td>${c.tgid}</td>
+      <td>${c.tg_name || ""}</td>
+      <td>${catTag(c.category||"other")}</td>
+      <td class="num">${fmt.dur(c.duration_s)}</td>
+      <td class="num">${fmt.freq(c.freq_mhz)}</td>
+      <td>${audio}</td>
+      <td class="transcript-cell">${transcriptCell(c)}</td>`;
+    tr.addEventListener("click", () => toggleDetail(c.id, tr));
+    body.appendChild(tr);
+  }
+}
+
+// Row click → expand inline detail row below
+async function toggleDetail(id, row) {
+  const next = row.nextSibling;
+  if (next && next.classList && next.classList.contains("detail") && next.dataset.forId === String(id)) {
+    next.remove();
+    row.classList.remove("expanded");
+    return;
+  }
+  // Remove any other open detail
+  for (const d of document.querySelectorAll("tr.detail")) d.remove();
+  for (const r of document.querySelectorAll("tr.expanded")) r.classList.remove("expanded");
+  // Fetch detail
+  const c = await fetch(`api/call/${id}`).then(r => r.json());
+  const related = (c.related || []).slice(0, 6).map(r =>
+    `<a href="#" onclick="event.preventDefault();document.querySelector('tr[data-call-id=&quot;${r.id}&quot;]')?.click();">${fmt.time(r.start_ts)} ${fmt.dur(r.duration_s)}</a>`
+  ).join("");
+  const alertHtml = c.alert_kind
+    ? `<div class="kv"><span class="k">alert</span><span class="v" style="color:var(--hot)">${c.alert_kind} ("${c.alert_match||""}")</span></div>` : "";
+  const det = document.createElement("tr");
+  det.className = "detail";
+  det.dataset.forId = String(id);
+  det.innerHTML = `<td colspan="8">
+    <div>
+      <span class="kv"><span class="k">ID</span><span class="v">${c.id}</span></span>
+      <span class="kv"><span class="k">TGID</span><span class="v">${c.tgid}</span></span>
+      <span class="kv"><span class="k">RID</span><span class="v">${c.rid||"-"}</span></span>
+      <span class="kv"><span class="k">Freq</span><span class="v">${(+c.freq_mhz).toFixed(4)} MHz</span></span>
+      <span class="kv"><span class="k">Start</span><span class="v">${fmt.time(c.start_ts)}</span></span>
+      <span class="kv"><span class="k">Duration</span><span class="v">${fmt.dur(c.duration_s)}</span></span>
+      ${alertHtml}
+    </div>
+    ${c.transcript ? `<div class="big-transcript">"${c.transcript.replace(/</g,"&lt;")}"</div>` : ''}
+    ${c.clip_path ? `<audio class="big-audio" controls preload="none" src="api/clip/${c.id}"></audio>` : '<div class="kv" style="color:var(--dim)">(audio clip pruned)</div>'}
+    ${related ? `<div class="related">related on ${c.tg_name}: ${related}</div>` : ''}
+  </td>`;
+  row.classList.add("expanded");
+  row.parentNode.insertBefore(det, row.nextSibling);
+}
+refresh();
+setInterval(refresh, 5000);
+
+// --- Conversations ---
+const CONV_STYLE = CATEGORY_STYLE;
+let _convPlayState = null;
+
+function renderConversations(convos, data) {
+  const el = document.getElementById("conversations");
+  const countEl = document.getElementById("conv-count");
+  if (!el) return;
+  var total = data.total || convos.length; countEl.textContent = convos.length ? (total > convos.length ? "showing " + convos.length + " of " + total : convos.length + " conversations") : "";
+  if (!convos.length) {
+    el.innerHTML = '<div style="color:var(--green-dim);padding:8px">No multi-call conversations in this period.</div>';
+    return;
+  }
+  el.innerHTML = "";
+  for (const conv of convos) {
+    const card = document.createElement("div");
+    const sty = CONV_STYLE[conv.category] || CONV_STYLE.other;
+    card.style.cssText = "background:" + sty.bg + ";border:1px solid " + sty.border + ";border-radius:6px;padding:10px 14px";
+    const hdr = document.createElement("div");
+    hdr.style.cssText = "display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap";
+    const tgSpan = document.createElement("span");
+    tgSpan.innerHTML = catTag(conv.category);
+    hdr.appendChild(tgSpan);
+    const nameSpan = document.createElement("strong");
+    nameSpan.textContent = (conv.tg_name || "TG-" + conv.tgid) + " (TGID " + conv.tgid + ")";
+    nameSpan.style.color = sty.fg;
+    hdr.appendChild(nameSpan);
+    const meta = document.createElement("span");
+    meta.style.cssText = "font-size:11px;color:var(--dim)";
+    meta.textContent = conv.event_count + " calls · " + fmt.dur(conv.duration_s) + " span · " + fmt.time(conv.start_ts) + " – " + fmt.time(conv.end_ts);
+    hdr.appendChild(meta);
+    const playAllBtn = document.createElement("button");
+    playAllBtn.textContent = "▶ Play All";
+    playAllBtn.style.cssText = "margin-left:auto;font-size:11px;padding:3px 10px;background:var(--green-deep);color:var(--green);border:1px solid var(--green);border-radius:4px;cursor:pointer";
+    playAllBtn.dataset.convId = conv.id;
+    hdr.appendChild(playAllBtn);
+    card.appendChild(hdr);
+    const timeline = document.createElement("div");
+    timeline.style.cssText = "display:flex;flex-direction:column;gap:2px";
+    timeline.dataset.convId = conv.id;
+    for (let i = 0; i < conv.events.length; i++) {
+      const ev = conv.events[i];
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:3px;font-size:12px";
+      row.dataset.convEventIdx = String(i);
+      row.dataset.callId = String(ev.id);
+      const ts = document.createElement("span");
+      ts.style.cssText = "color:var(--dim);min-width:70px;font-size:11px";
+      ts.textContent = fmt.time(ev.start_ts);
+      row.appendChild(ts);
+      const durBar = document.createElement("span");
+      const durSec = ev.duration_s || 0;
+      const barW = Math.max(8, Math.min(120, durSec * 8));
+      durBar.style.cssText = "display:inline-block;height:6px;border-radius:3px;background:" + sty.fg + "55;min-width:8px;width:" + barW + "px";
+      durBar.title = fmt.dur(durSec);
+      row.appendChild(durBar);
+      const durLabel = document.createElement("span");
+      durLabel.style.cssText = "color:var(--dim);font-size:10px;min-width:35px";
+      durLabel.textContent = fmt.dur(durSec);
+      row.appendChild(durLabel);
+      if (ev.clip_path) {
+        const playBtn = document.createElement("button");
+        playBtn.textContent = "▶";
+        playBtn.style.cssText = "font-size:10px;padding:1px 6px;background:transparent;color:" + sty.fg + ";border:1px solid " + sty.border + ";border-radius:3px;cursor:pointer";
+        playBtn.addEventListener("click", function(e) {
+          e.stopPropagation();
+          const audio = new Audio("api/clip/" + ev.id);
+          audio.play();
+        });
+        row.appendChild(playBtn);
+      }
+      const txt = document.createElement("span");
+      txt.style.cssText = "color:" + sty.fg + ";opacity:0.85;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      if (ev.transcript_status === "ok" && ev.transcript) {
+        txt.textContent = '"' + ev.transcript + '"';
+      } else if (ev.transcript_status === "pending") {
+        txt.textContent = "transcribing…";
+        txt.style.opacity = "0.4";
+      } else if (ev.transcript_status === "silent") {
+        txt.textContent = "(no speech)";
+        txt.style.opacity = "0.4";
+      } else {
+        txt.textContent = "";
+      }
+      if (ev.alert_kind) {
+        const badge = document.createElement("span");
+        badge.className = "alert-badge " + ev.alert_kind;
+        badge.textContent = ev.alert_kind;
+        badge.style.marginRight = "6px";
+        txt.prepend(badge);
+      }
+      row.appendChild(txt);
+      timeline.appendChild(row);
+    }
+    card.appendChild(timeline);
+    el.appendChild(card);
+    // Play All handler
+    playAllBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      if (_convPlayState && _convPlayState.convId === conv.id) {
+        _convPlayState.audio.pause();
+        _convPlayState = null;
+        playAllBtn.textContent = "\u25b6 Play All";
+        var rows = timeline.querySelectorAll("[data-conv-event-idx]");
+        for (var r of rows) r.style.background = "";
+        return;
+      }
+      var clips = [];
+      for (var j = 0; j < conv.events.length; j++) {
+        if (conv.events[j].clip_path) clips.push({idx: j, id: conv.events[j].id});
+      }
+      if (!clips.length) return;
+      playAllBtn.textContent = "\u25a0 Stop";
+      function playNext(ci) {
+        if (ci >= clips.length) {
+          _convPlayState = null;
+          playAllBtn.textContent = "\u25b6 Play All";
+          var allRows = timeline.querySelectorAll("[data-conv-event-idx]");
+          for (var ar of allRows) ar.style.background = "";
+          return;
+        }
+        var clip = clips[ci];
+        var allRows = timeline.querySelectorAll("[data-conv-event-idx]");
+        for (var ar of allRows) ar.style.background = "";
+        var activeRow = timeline.querySelector("[data-conv-event-idx='" + clip.idx + "']");
+        if (activeRow) activeRow.style.background = sty.fg + "22";
+        var audio = new Audio("api/clip/" + clip.id);
+        _convPlayState = {convId: conv.id, audio: audio};
+        audio.addEventListener("ended", function() { playNext(ci + 1); });
+        audio.play();
+      }
+      playNext(0);
+    });
+  }
+}
+
+// Fetch conversations on a slightly offset interval
+async function refreshConversations() {
+  const audios = document.querySelectorAll('audio');
+  for (const a of audios) { if (!a.paused && !a.ended) return; }
+  try {
+    const gapSel = document.getElementById("conv-gap");
+    const gap = gapSel ? gapSel.value : "45";
+    const resp = await fetch("api/conversations?hours=24&gap=" + gap);
+    const data = await resp.json();
+    renderConversations(data.conversations || [], data);
+  } catch (e) { /* silent */ }
+}
+refreshConversations();
+setInterval(refreshConversations, 5500);
+const gapSelect = document.getElementById("conv-gap");
+if (gapSelect) gapSelect.addEventListener("change", refreshConversations);
+
+</script>
+</body>
+</html>

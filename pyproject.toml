@@ -1,0 +1,32 @@
+[project]
+name = "scanpi"
+version = "0.1.0"
+description = "Self-contained Pi 5 radio scanner with auto-discovery, recording, transcription, and web UI"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Patrick Ryan"}]
+readme = "README.md"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "aiosqlite>=0.20",
+    "onnxruntime>=1.18",
+    "numpy>=1.26,<2.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+transcribe = ["faster-whisper>=1.0"]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+scanpi = "scanpi.cli:main"
+scanpi-v3 = "scanpi.cli_v3:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

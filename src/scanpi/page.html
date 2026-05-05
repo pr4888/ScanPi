@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ScanPi GMRS Monitor</title>
+<style>
+ :root { --bg:#0b0d10; --fg:#d8dde3; --dim:#7b8796; --ok:#4ae04a; --hot:#ff8844; --hdr:#1a1f26; --row:#12161c; --accent:#4a9eff; }
+ html,body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,sans-serif; }
+ header { padding:12px 18px; background:var(--hdr); border-bottom:1px solid #252d38; display:flex; justify-content:space-between; align-items:center; }
+ h1 { margin:0; font-size:16px; letter-spacing:.5px; }
+ .sub { color:var(--dim); font-size:12px; }
+ main { padding:16px; max-width:1200px; margin:0 auto; }
+ table { width:100%; border-collapse:collapse; background:var(--row); }
+ th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #1d232b; }
+ th { color:var(--dim); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.5px; background:var(--hdr); }
+ tr.open td:first-child::before { content:"● "; color:var(--ok); }
+ tr.open { background:#13211a; }
+ .rssi-bar { display:inline-block; height:6px; background:#2a3240; vertical-align:middle; margin-left:8px; }
+ .rssi-fill { height:100%; background:linear-gradient(90deg,#4a9eff,#4ae04a,#ff8844); }
+ .freq { color:var(--dim); font-variant-numeric:tabular-nums; }
+ .num { font-variant-numeric:tabular-nums; text-align:right; }
+ .hot { color:var(--hot); font-weight:600; }
+ section { margin-top:24px; }
+ h2 { font-size:13px; text-transform:uppercase; color:var(--dim); margin:0 0 8px; letter-spacing:.5px; }
+ .recommend { background:var(--row); padding:12px 16px; border-left:3px solid var(--accent); margin-bottom:16px; }
+ .recommend strong { color:var(--accent); }
+ .ch-tag { display:inline-block; padding:2px 8px; border-radius:3px; font-size:12px; font-weight:600; min-width:40px; text-align:center; }
+ .last-line { color:var(--dim); font-size:13px; margin-top:6px; }
+ .last-line strong { color:var(--fg); }
+ .transcript { color:var(--fg); font-style:italic; max-width:360px; word-break:break-word; }
+ .transcript.pending { color:var(--dim); font-style:normal; font-size:11px; }
+ .transcript.empty { color:#4a5260; font-size:11px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>ScanPi — GMRS/FRS Monitor</h1>
+    <div style="margin-top:4px"><a href="/" style="color:#4a9eff;font-size:12px;text-decoration:none">← dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="last-line" id="last-tx">No activity yet.</div>
+  <div class="recommend" id="recommend">Collecting data…</div>
+
+  <section>
+    <h2>Live channels</h2>
+    <table id="live">
+      <thead><tr><th>Ch</th><th>Freq</th><th>RSSI</th><th>Peak</th><th>Last TX</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Activity (last 24h)</h2>
+    <table id="stats">
+      <thead><tr><th>Ch</th><th class="num">TX count</th><th class="num">Airtime</th><th class="num">Avg dur</th><th>Last active</th><th class="num">Avg RSSI</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent transmissions</h2>
+    <table id="recent">
+      <thead><tr><th>Time</th><th>Ch</th><th class="num">Dur</th><th class="num">Peak</th><th>Subtone</th><th>Audio</th><th>Transcript</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const fmt = {
+  freq: hz => (hz/1e6).toFixed(4) + " MHz",
+  dur:  s  => s == null ? "—" : s < 60 ? s.toFixed(1)+"s" : (s/60).toFixed(1)+"m",
+  rssi: d  => d == null ? "—" : d.toFixed(1),
+  time: ts => ts ? new Date(ts*1000).toLocaleTimeString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=(Date.now()/1000-ts); if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago"; return Math.floor(a/3600)+"h ago"; },
+};
+
+function rssiBar(d) {
+  if (d == null || d < -100) return "";
+  const pct = Math.max(0, Math.min(100, (d + 90) * 2));
+  return `<span class="rssi-bar" style="width:60px"><span class="rssi-fill" style="display:block;width:${pct}%"></span></span>`;
+}
+
+// Consistent color per channel so your eye tracks "Ch 1 is kids, Ch 16 is neighbor".
+// 15 channels in the 462 block — map to a distinguishable palette.
+const CH_COLOR = {
+  1:"#ff6b6b", 2:"#ffa500", 3:"#ffd700", 4:"#8fbc8f", 5:"#4ae04a",
+  6:"#40e0d0", 7:"#4a9eff",15:"#9370db",16:"#ff69b4",17:"#f08080",
+ 18:"#daa520",19:"#b8860b",20:"#7ec8e3",21:"#ee82ee",22:"#a0a0a0",
+};
+function chTag(num) {
+  const c = CH_COLOR[num] || "#888";
+  return `<span class="ch-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">Ch ${num}</span>`;
+}
+
+function transcriptCell(e) {
+  const st = e.transcript_status;
+  if (st === "ok" && e.transcript) return `<span class="transcript">"${e.transcript}"</span>`;
+  if (st === "pending") return `<span class="transcript pending">transcribing…</span>`;
+  if (st === "silent") return `<span class="transcript empty">(no speech)</span>`;
+  if (st === "too_short") return `<span class="transcript empty">(too short)</span>`;
+  if (st === "failed" || st === "bad_wav" || st === "missing") return `<span class="transcript empty">—</span>`;
+  if (!st) return `<span class="transcript empty">—</span>`;
+  return `<span class="transcript empty">${st}</span>`;
+}
+
+async function refresh() {
+  try {
+    const [live, stats, recent] = await Promise.all([
+      fetch("api/live").then(r => r.json()),
+      fetch("api/stats?hours=24").then(r => r.json()),
+      fetch("api/recent?limit=30").then(r => r.json()),
+    ]);
+
+    document.getElementById("meta").textContent =
+      `center ${(live.center_hz/1e6).toFixed(4)} MHz · ${(live.sample_rate/1e6).toFixed(1)} Msps · sq ${live.squelch_db} dB`;
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+
+    // Last-TX summary line
+    const lastLine = document.getElementById("last-tx");
+    const last = recent.events.find(e => e.end_ts);
+    if (last) {
+      lastLine.innerHTML = `Last TX: <strong>${fmt.ago(last.end_ts)}</strong> on `
+        + `${chTag(last.channel)} · <strong>${fmt.dur(last.duration_s)}</strong> · `
+        + `peak <strong>${fmt.rssi(last.peak_rssi)} dBFS</strong>`;
+    } else {
+      lastLine.textContent = "No activity yet.";
+    }
+
+    const liveTbody = document.querySelector("#live tbody");
+    liveTbody.innerHTML = "";
+    for (const c of live.channels) {
+      const tr = document.createElement("tr");
+      if (c.open) tr.classList.add("open");
+      tr.innerHTML = `
+        <td>${chTag(c.channel)}</td>
+        <td class="freq">${fmt.freq(c.freq_hz)}</td>
+        <td>${fmt.rssi(c.last_rssi)} ${rssiBar(c.last_rssi)}</td>
+        <td>${fmt.rssi(c.peak_rssi)}</td>
+        <td>${fmt.ago(c.last_event_ts)}</td>`;
+      liveTbody.appendChild(tr);
+    }
+
+    const statsTbody = document.querySelector("#stats tbody");
+    statsTbody.innerHTML = "";
+    const top = stats.channels[0];
+    for (const s of stats.channels) {
+      const tr = document.createElement("tr");
+      const hot = top && s.channel === top.channel ? "hot" : "";
+      tr.innerHTML = `
+        <td>${chTag(s.channel)}</td>
+        <td class="num ${hot}">${s.tx_count}</td>
+        <td class="num">${fmt.dur(s.total_airtime_s)}</td>
+        <td class="num">${fmt.dur(s.avg_duration_s)}</td>
+        <td>${fmt.ago(s.last_active)}</td>
+        <td class="num">${fmt.rssi(s.avg_peak_rssi)}</td>`;
+      statsTbody.appendChild(tr);
+    }
+
+    const rec = document.getElementById("recommend");
+    if (top && top.tx_count >= 3) {
+      rec.innerHTML = `Most-active channel last 24h: <strong>Ch ${top.channel}</strong> — ${top.tx_count} transmissions, ${fmt.dur(top.total_airtime_s)} total airtime, avg RSSI ${fmt.rssi(top.avg_peak_rssi)} dBFS.`;
+    } else {
+      rec.textContent = "Not enough activity yet. Let it run during daytime / evening when kids are typically on-air.";
+    }
+
+    // Incremental update — never destroy rows that are already rendered
+    // (destroying them kills any <audio> element mid-playback).
+    const recTbody = document.querySelector("#recent tbody");
+    const existing = new Map();
+    for (const row of recTbody.querySelectorAll("tr[data-event-id]")) {
+      existing.set(row.dataset.eventId, row);
+    }
+    const wantedIds = new Set(recent.events.map(e => String(e.id)));
+    // Remove rows for events that are no longer in the recent list.
+    for (const [id, row] of existing) {
+      if (!wantedIds.has(id)) row.remove();
+    }
+    // Add or skip rows in the correct position (newest first per API order).
+    let prev = null;
+    for (const e of recent.events) {
+      let tr = existing.get(String(e.id));
+      if (!tr) {
+        tr = document.createElement("tr");
+        tr.dataset.eventId = String(e.id);
+        const audio = e.clip_path
+          ? `<audio controls preload="none" src="api/clip/${e.id}" style="height:28px;width:180px"></audio>`
+          : "—";
+        tr.innerHTML = `
+          <td>${fmt.time(e.start_ts)}</td>
+          <td>${chTag(e.channel)}</td>
+          <td class="num">${fmt.dur(e.duration_s)}</td>
+          <td class="num">${fmt.rssi(e.peak_rssi)}</td>
+          <td>${e.ctcss_hz ? e.ctcss_hz.toFixed(1)+" Hz" : "—"}</td>
+          <td>${audio}</td>
+          <td class="transcript-cell">${transcriptCell(e)}</td>`;
+      } else {
+        // Row exists — only refresh the transcript cell (may change from
+        // "pending" to actual text after Whisper finishes).
+        const tc = tr.querySelector(".transcript-cell");
+        if (tc) tc.innerHTML = transcriptCell(e);
+      }
+      // Position it after prev (preserves server order without touching unchanged rows).
+      if (prev === null) {
+        if (recTbody.firstChild !== tr) recTbody.insertBefore(tr, recTbody.firstChild);
+      } else if (prev.nextSibling !== tr) {
+        recTbody.insertBefore(tr, prev.nextSibling);
+      }
+      prev = tr;
+    }
+  } catch (e) {
+    document.getElementById("updated").textContent = "error: " + e;
+  }
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

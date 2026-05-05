@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>ScanPi</title>
+<style>
+:root {
+  --bg: #0a0a0a; --bg2: #111; --bg3: #1a1a1a; --bg4: #242424;
+  --text: #e0e0e0; --text2: #888; --text3: #555;
+  --accent: #1db954; --accent-dim: #145a2a;
+  --police: #4a9eff; --fire: #ff4a4a; --ems: #ff8c1a; --utility: #b44aff;
+  --other: #666; --border: #282828; --hover: #222;
+  --np-height: 72px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  overflow: hidden;
+}
+button { font-family: inherit; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* ================================================================
+   LAYOUT
+   ================================================================ */
+.app-shell {
+  display: flex; flex-direction: column; height: 100vh;
+}
+.tab-content {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding-bottom: var(--np-height);
+}
+.tab-pane { display: none; min-height: 100%; }
+.tab-pane.active { display: block; }
+
+/* ================================================================
+   ERROR BANNER
+   ================================================================ */
+#error-banner {
+  display: none; background: #4a1a1a; color: #ff6b6b; text-align: center;
+  padding: 8px 16px; font-size: 13px; font-weight: 500;
+  border-bottom: 1px solid #5a2a2a;
+}
+
+/* ================================================================
+   SCANNER FACE
+   ================================================================ */
+.scanner {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px 16px 8px;
+}
+
+/* LED */
+.led-wrap {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+  font-size: 12px; color: var(--text2); text-transform: uppercase;
+  letter-spacing: 1.5px; font-weight: 600;
+}
+.led {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #222; border: 2px solid #333;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.led.live {
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent), 0 0 24px rgba(29,185,84,0.3);
+  animation: led-pulse 2s ease-in-out infinite;
+}
+.led.idle {
+  background: #333;
+  box-shadow: none;
+}
+.led.holding {
+  background: #f59e0b;
+  box-shadow: 0 0 12px #f59e0b, 0 0 24px rgba(245,158,11,0.3);
+}
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Status line */
+.scanner-status {
+  font-size: 11px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 4px;
+}
+.scanner-status .queue-count {
+  color: var(--accent); font-weight: 700;
+}
+
+/* Category badge */
+.cat-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 8px;
+}
+
+/* Hero department name */
+.hero-name {
+  font-size: clamp(28px, 6vw, 48px); font-weight: 800;
+  text-align: center; line-height: 1.1; margin-bottom: 6px;
+  max-width: 90%; word-wrap: break-word;
+  transition: color 0.3s;
+}
+
+/* Transcript */
+.hero-transcript {
+  font-size: 15px; color: var(--text2); text-align: center;
+  max-width: 600px; line-height: 1.5; margin-bottom: 16px;
+  min-height: 24px; font-style: italic;
+}
+.hero-transcript:empty::after {
+  content: 'Waiting for transmissions...';
+  color: var(--text3);
+}
+
+/* Progress bar */
+.scanner-progress {
+  width: 100%; max-width: 500px; display: flex; align-items: center;
+  gap: 10px; margin-bottom: 20px;
+}
+.scanner-progress .track {
+  flex: 1; height: 4px; background: var(--bg4); border-radius: 2px;
+  overflow: hidden; cursor: pointer; position: relative;
+}
+.scanner-progress .track:hover { height: 6px; }
+.scanner-progress .fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width 0.3s linear; width: 0%;
+}
+.scanner-progress .time {
+  font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+
+/* Scanner controls */
+.scanner-controls {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  margin-bottom: 24px;
+}
+.sc-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  transition: all 0.15s; min-width: 44px; min-height: 44px;
+  justify-content: center; user-select: none;
+}
+.sc-btn:hover { background: var(--bg4); color: var(--text); border-color: #444; }
+.sc-btn:active { transform: scale(0.96); }
+.sc-btn.active-live {
+  background: var(--accent-dim); border-color: var(--accent);
+  color: var(--accent);
+}
+.sc-btn.active-hold {
+  background: #3d2e00; border-color: #f59e0b; color: #f59e0b;
+}
+.sc-btn.active-avoid {
+  background: #3d1010; border-color: var(--fire); color: var(--fire);
+}
+.sc-btn svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
+
+/* Keyboard hint */
+.kbd {
+  display: inline-block; font-size: 9px; color: var(--text3);
+  border: 1px solid var(--text3); border-radius: 3px;
+  padding: 0 4px; margin-left: 4px; vertical-align: middle;
+  line-height: 16px;
+}
+@media (max-width: 768px) { .kbd { display: none; } }
+
+/* Recent calls */
+.recent-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; margin-bottom: 8px;
+}
+.recent-header h3 {
+  font-size: 13px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600;
+}
+.recent-list {
+  padding: 0 8px;
+}
+
+/* ================================================================
+   CALL ROW (used everywhere)
+   ================================================================ */
+.call-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  transition: background 0.15s; position: relative;
+}
+.call-row:hover { background: var(--hover); }
+.call-row.playing { background: var(--bg3); }
+.call-row .cr-cat {
+  width: 4px; align-self: stretch; border-radius: 2px; flex-shrink: 0;
+}
+.call-row .cr-body { flex: 1; min-width: 0; }
+.call-row .cr-name {
+  font-size: 14px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.call-row .cr-transcript {
+  font-size: 12px; color: var(--text2); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+}
+.call-row .cr-meta {
+  display: flex; gap: 8px; font-size: 11px; color: var(--text3); margin-top: 2px;
+}
+.call-row .cr-right {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.call-row .cr-time {
+  font-size: 11px; color: var(--text3); text-align: right;
+  font-variant-numeric: tabular-nums; min-width: 40px;
+}
+.call-row .cr-dur {
+  font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums;
+}
+.cr-play-btn, .cr-star-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  padding: 6px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; min-width: 32px; min-height: 32px;
+  transition: all 0.15s;
+}
+.cr-play-btn:hover { color: var(--accent); background: var(--bg4); }
+.cr-star-btn:hover { color: #fbbf24; }
+.cr-star-btn.starred { color: #fbbf24; }
+.cr-play-btn svg, .cr-star-btn svg { width: 14px; height: 14px; fill: currentColor; }
+.cr-no-audio {
+  font-size: 10px; color: var(--text3); border: 1px solid var(--text3);
+  border-radius: 3px; padding: 1px 5px;
+}
+.cr-new-badge {
+  font-size: 9px; color: var(--accent); background: var(--accent-dim);
+  border-radius: 3px; padding: 1px 5px; font-weight: 700;
+}
+.cr-active-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  animation: led-pulse 2s infinite; flex-shrink: 0;
+}
+
+/* ================================================================
+   BROWSE DEPARTMENTS
+   ================================================================ */
+.browse-header {
+  padding: 20px 16px 12px; display: flex; align-items: center;
+  justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.browse-header h2 { font-size: 22px; font-weight: 700; }
+.cat-pills {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 12px;
+}
+.cat-pill {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border); color: var(--text2);
+  background: transparent; transition: all 0.15s;
+}
+.cat-pill:hover { border-color: #555; color: var(--text); }
+.cat-pill.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+.dept-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px; padding: 0 16px 16px;
+}
+.dept-card {
+  background: var(--bg3); border-radius: 10px; padding: 16px 16px 16px 20px;
+  cursor: pointer; transition: background 0.2s, transform 0.1s;
+  position: relative; overflow: hidden;
+}
+.dept-card:hover { background: var(--bg4); transform: translateY(-1px); }
+.dept-card .dc-border {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+}
+.dept-card .dc-top {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.dept-card .dc-name {
+  font-size: 16px; font-weight: 700; line-height: 1.2;
+  max-width: calc(100% - 30px);
+}
+.dept-card .dc-active {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  animation: led-pulse 2s infinite; flex-shrink: 0;
+}
+.dept-card .dc-count {
+  font-size: 12px; color: var(--text2); margin-top: 6px;
+}
+
+/* Department detail */
+.dept-detail {
+  padding: 16px;
+}
+.dept-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  font-size: 13px; padding: 8px 0; margin-bottom: 8px;
+}
+.dept-back:hover { color: var(--text); }
+.dept-back svg { width: 16px; height: 16px; fill: currentColor; }
+.dept-detail-head {
+  margin-bottom: 16px;
+}
+.dept-detail-head h2 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+.dept-detail-head .dh-meta { font-size: 13px; color: var(--text2); }
+.dept-detail-head .dh-actions {
+  display: flex; gap: 8px; margin-top: 10px;
+}
+.btn-sm {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent); color: #000; font-weight: 600;
+  border: none; border-radius: 20px; padding: 8px 20px;
+  font-size: 13px; cursor: pointer;
+}
+.btn-sm:hover { filter: brightness(1.1); }
+.btn-sm.secondary {
+  background: var(--bg4); color: var(--text); border: 1px solid var(--border);
+}
+
+/* ================================================================
+   SEARCH
+   ================================================================ */
+.search-page { padding: 20px 16px; }
+.search-page h2 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+.search-box {
+  position: relative; margin-bottom: 16px;
+}
+.search-box input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px 12px 44px; color: var(--text);
+  font-size: 15px;
+}
+.search-box input:focus { outline: none; border-color: var(--accent); }
+.search-box svg {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; fill: var(--text3);
+}
+.search-results-info {
+  font-size: 12px; color: var(--text3); margin-bottom: 8px; padding: 0 4px;
+}
+mark {
+  background: rgba(29,185,84,0.3); color: var(--text); border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ================================================================
+   SAVED
+   ================================================================ */
+.saved-page { padding: 20px 16px; }
+.saved-page h2 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+
+/* ================================================================
+   EMPTY STATE
+   ================================================================ */
+.empty-state {
+  text-align: center; padding: 60px 20px; color: var(--text3);
+}
+.empty-state svg { width: 48px; height: 48px; fill: var(--text3); margin-bottom: 12px; }
+.empty-state p { font-size: 14px; line-height: 1.5; }
+
+/* ================================================================
+   NOW PLAYING BAR
+   ================================================================ */
+#now-playing {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--np-height); background: var(--bg2);
+  border-top: 1px solid var(--border); z-index: 100;
+  display: none; /* hidden until first play */
+  flex-direction: column;
+}
+#now-playing.visible { display: flex; }
+.np-progress-track {
+  width: 100%; height: 3px; background: var(--bg4); cursor: pointer;
+  flex-shrink: 0;
+}
+.np-progress-fill {
+  height: 100%; background: var(--accent); width: 0%;
+  transition: width 0.3s linear;
+}
+.np-progress-track:hover { height: 5px; }
+.np-body {
+  flex: 1; display: flex; align-items: center; padding: 0 12px; gap: 12px;
+  min-width: 0;
+}
+.np-info { flex: 1; min-width: 0; }
+.np-name {
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.np-transcript {
+  font-size: 11px; color: var(--text2); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.np-controls {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+}
+.np-btn {
+  background: none; border: none; color: var(--text2); cursor: pointer;
+  padding: 8px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; min-width: 36px; min-height: 36px;
+  transition: all 0.15s;
+}
+.np-btn:hover { color: var(--text); background: var(--bg3); }
+.np-btn svg { width: 18px; height: 18px; fill: currentColor; }
+.np-btn-play {
+  background: var(--accent); color: #000; width: 36px; height: 36px;
+  border-radius: 50%; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.np-btn-play:hover { filter: brightness(1.1); transform: scale(1.05); }
+.np-btn-play svg { width: 16px; height: 16px; fill: currentColor; }
+.np-time {
+  font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums;
+  min-width: 80px; text-align: center;
+}
+.np-vol {
+  display: flex; align-items: center; gap: 4px;
+}
+.np-vol input[type=range] {
+  -webkit-appearance: none; width: 70px; height: 4px;
+  background: var(--bg4); border-radius: 2px; outline: none;
+}
+.np-vol input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--text); cursor: pointer;
+}
+@media (max-width: 600px) {
+  .np-vol { display: none; }
+  .np-time { display: none; }
+}
+
+/* Buffering spinner */
+.np-spinner {
+  display: none; width: 36px; height: 36px;
+  border: 3px solid var(--bg4); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+.np-spinner.loading { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ================================================================
+   BOTTOM TAB BAR (mobile) + top nav (desktop)
+   ================================================================ */
+.top-nav {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 6px 12px; flex-shrink: 0;
+}
+.top-nav .logo {
+  font-size: 18px; font-weight: 800; margin-right: 12px; letter-spacing: -0.5px;
+}
+.top-nav .logo span { color: var(--accent); }
+.tab-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 6px;
+  transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.tab-btn:hover { color: var(--text); background: var(--hover); }
+.tab-btn.active { color: var(--text); background: var(--bg3); }
+.tab-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.top-nav .spacer { flex: 1; }
+.top-nav .status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+}
+.top-nav .status-dot.offline { background: var(--fire); }
+
+/* Mobile bottom tabs */
+.bottom-tabs {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--bg2); border-top: 1px solid var(--border);
+  z-index: 200; height: 56px;
+}
+.bottom-tabs .btab {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; background: none; border: none;
+  color: var(--text3); cursor: pointer; font-size: 10px; font-weight: 600;
+  padding: 4px; transition: color 0.15s;
+}
+.bottom-tabs .btab.active { color: var(--accent); }
+.bottom-tabs .btab svg { width: 20px; height: 20px; fill: currentColor; }
+
+@media (max-width: 768px) {
+  .top-nav .tab-btn { display: none; }
+  .bottom-tabs { display: flex; }
+  .tab-content { padding-bottom: calc(var(--np-height) + 56px); }
+  #now-playing.visible { bottom: 56px; }
+}
+
+/* ================================================================
+   LOADING OVERLAY
+   ================================================================ */
+.loading-overlay {
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px; color: var(--text3);
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+<!-- ERROR BANNER -->
+<div id="error-banner">Cannot reach scanner. Retrying...</div>
+
+<!-- TOP NAV -->
+<nav class="top-nav">
+  <div class="logo">Scan<span>Pi</span></div>
+  <button class="tab-btn active" data-tab="scanner" onclick="switchTab('scanner')">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    Scanner
+  </button>
+  <button class="tab-btn" data-tab="browse" onclick="switchTab('browse')">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+    Browse
+  </button>
+  <button class="tab-btn" data-tab="search" onclick="switchTab('search')">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    Search
+  </button>
+  <button class="tab-btn" data-tab="saved" onclick="switchTab('saved')">
+    <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+    Saved
+  </button>
+  <div class="spacer"></div>
+  <div class="status-dot" id="status-dot" title="Connected"></div>
+</nav>
+
+<!-- TAB CONTENT -->
+<div class="tab-content">
+
+  <!-- ============================================================
+       SCANNER TAB
+       ============================================================ -->
+  <div class="tab-pane active" id="tab-scanner">
+    <div class="scanner">
+      <!-- LED -->
+      <div class="led-wrap">
+        <div class="led idle" id="led"></div>
+        <span id="led-label">IDLE</span>
+      </div>
+
+      <!-- Status line -->
+      <div class="scanner-status" id="scanner-status">
+        Waiting for calls <span class="queue-count" id="queue-count"></span>
+      </div>
+
+      <!-- Category badge -->
+      <div class="cat-badge" id="hero-badge" style="display:none"></div>
+
+      <!-- Hero department name -->
+      <div class="hero-name" id="hero-name">ScanPi</div>
+
+      <!-- Transcript -->
+      <div class="hero-transcript" id="hero-transcript"></div>
+
+      <!-- Progress bar -->
+      <div class="scanner-progress" id="scanner-progress" style="visibility:hidden">
+        <span class="time" id="sp-current">0:00</span>
+        <div class="track" onclick="seekAudio(event)">
+          <div class="fill" id="sp-fill"></div>
+        </div>
+        <span class="time" id="sp-total">0:00</span>
+      </div>
+
+      <!-- Controls -->
+      <div class="scanner-controls">
+        <button class="sc-btn" id="btn-live" onclick="toggleLive()" title="Live scan (L)">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+          LIVE <span class="kbd">L</span>
+        </button>
+        <button class="sc-btn" id="btn-hold" onclick="toggleHold()" title="Hold channel (H)">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+          HOLD <span class="kbd">H</span>
+        </button>
+        <button class="sc-btn" id="btn-skip" onclick="doSkip()" title="Skip (S)">
+          <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+          SKIP <span class="kbd">S</span>
+        </button>
+        <button class="sc-btn" id="btn-replay" onclick="doReplay()" title="Replay (R)">
+          <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+          REPLAY <span class="kbd">R</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Recent calls -->
+    <div class="recent-header">
+      <h3>Recent Calls</h3>
+    </div>
+    <div class="recent-list" id="recent-list"></div>
+  </div>
+
+  <!-- ============================================================
+       BROWSE TAB
+       ============================================================ -->
+  <div class="tab-pane" id="tab-browse">
+    <div id="browse-list-view">
+      <div class="browse-header">
+        <h2>Departments</h2>
+      </div>
+      <div class="cat-pills" id="cat-pills"></div>
+      <div class="dept-grid" id="dept-grid"></div>
+    </div>
+    <div id="browse-detail-view" style="display:none">
+      <div class="dept-detail" id="dept-detail"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SEARCH TAB
+       ============================================================ -->
+  <div class="tab-pane" id="tab-search">
+    <div class="search-page">
+      <h2>Search Transcripts</h2>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" id="search-input" placeholder="Search calls, departments, transcripts..." autocomplete="off">
+      </div>
+      <div class="search-results-info" id="search-info"></div>
+      <div id="search-results"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SAVED TAB
+       ============================================================ -->
+  <div class="tab-pane" id="tab-saved">
+    <div class="saved-page">
+      <h2>Saved Calls</h2>
+      <div id="saved-list"></div>
+    </div>
+  </div>
+
+</div><!-- /tab-content -->
+
+<!-- MOBILE BOTTOM TABS -->
+<div class="bottom-tabs">
+  <button class="btab active" data-tab="scanner" onclick="switchTab('scanner')">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+    Scanner
+  </button>
+  <button class="btab" data-tab="browse" onclick="switchTab('browse')">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+    Browse
+  </button>
+  <button class="btab" data-tab="search" onclick="switchTab('search')">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    Search
+  </button>
+  <button class="btab" data-tab="saved" onclick="switchTab('saved')">
+    <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+    Saved
+  </button>
+</div>
+
+</div><!-- /app-shell -->
+
+<!-- NOW PLAYING BAR -->
+<div id="now-playing">
+  <div class="np-progress-track" onclick="seekNP(event)">
+    <div class="np-progress-fill" id="np-fill"></div>
+  </div>
+  <div class="np-body">
+    <div class="np-info">
+      <div class="np-name" id="np-name">ScanPi</div>
+      <div class="np-transcript" id="np-transcript"></div>
+    </div>
+    <div class="np-time" id="np-time">0:00 / 0:00</div>
+    <div class="np-controls">
+      <button class="np-btn" onclick="npPrev()" title="Previous">
+        <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <div class="np-spinner" id="np-spinner"></div>
+      <button class="np-btn-play" id="np-play-btn" onclick="npToggle()">
+        <svg viewBox="0 0 24 24" id="np-play-icon"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="np-btn" onclick="npNext()" title="Next">
+        <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </button>
+    </div>
+    <div class="np-vol">
+      <button class="np-btn" id="np-vol-btn" onclick="npMuteToggle()">
+        <svg viewBox="0 0 24 24" id="np-vol-icon"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+      <input type="range" id="np-vol-slider" min="0" max="100" value="80" oninput="npSetVol(this.value)">
+    </div>
+  </div>
+</div>
+
+<audio id="audio-el" preload="auto"></audio>
+
+<script>
+/* =================================================================
+   STATE
+   ================================================================= */
+const state = {
+  tab: 'scanner',
+  // Scanner mode
+  liveMode: false,
+  holdMode: false,
+  holdTgid: null,
+  // Playback — decoupled from view
+  playQueue: [],       // calls queued for playback
+  playIndex: -1,       // current index in playQueue
+  currentCall: null,   // the call object currently loaded
+  isPlaying: false,
+  isBuffering: false,
+  // Data
+  talkgroups: [],
+  recentCalls: [],
+  allCalls: [],        // full call list for the scanner recent section
+  // Browse
+  browseCat: null,
+  browseDetailTgid: null,
+  // Search
+  searchQuery: '',
+  searchResults: [],
+  // Saved
+  starred: JSON.parse(localStorage.getItem('scanpi_starred') || '[]'),
+  // SSE
+  lastSeenCallId: 0,
+  newCallIds: new Set(),
+  // API
+  apiOk: true,
+  // Avoid
+  avoidedTgs: {},  // tgid -> { until: timestamp, level: 1-4 }
+};
+
+const audio = document.getElementById('audio-el');
+
+/* =================================================================
+   ICONS (SVG strings)
+   ================================================================= */
+const IC = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
+  starO: '<svg viewBox="0 0 24 24"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg>',
+  noAudio: '<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.796 8.796 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>',
+};
+
+/* =================================================================
+   CATEGORY HELPERS
+   ================================================================= */
+function catColor(cat) {
+  const m = { police: 'var(--police)', fire: 'var(--fire)', ems: 'var(--ems)', utility: 'var(--utility)' };
+  return m[cat] || 'var(--other)';
+}
+function catLabel(cat) {
+  return (cat || 'other').charAt(0).toUpperCase() + (cat || 'other').slice(1);
+}
+
+/* =================================================================
+   TIME HELPERS
+   ================================================================= */
+function timeAgo(ts) {
+  if (!ts) return '';
+  const s = Math.floor(Date.now() / 1000 - ts);
+  if (s < 0) return 'just now';
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+function fmtTime(sec) {
+  if (!sec || !isFinite(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+function fmtDuration(s) {
+  if (!s) return '0s';
+  if (s < 60) return Math.round(s) + 's';
+  return Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's';
+}
+
+/* =================================================================
+   API
+   ================================================================= */
+async function api(path) {
+  try {
+    const r = await fetch('/api/' + path);
+    if (!r.ok) return null;
+    setApiOk(true);
+    return await r.json();
+  } catch (e) {
+    setApiOk(false);
+    return null;
+  }
+}
+function setApiOk(ok) {
+  state.apiOk = ok;
+  const b = document.getElementById('error-banner');
+  const d = document.getElementById('status-dot');
+  b.style.display = ok ? 'none' : 'block';
+  d.classList.toggle('offline', !ok);
+}
+
+/* =================================================================
+   TAB NAVIGATION
+   ================================================================= */
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+
+  if (tab === 'browse') {
+    if (state.browseDetailTgid) showDeptDetail(state.browseDetailTgid);
+    else refreshBrowse();
+  }
+  if (tab === 'search') document.getElementById('search-input').focus();
+  if (tab === 'saved') refreshSaved();
+  if (tab === 'scanner') refreshScanner();
+}
+
+/* =================================================================
+   SCANNER TAB
+   ================================================================= */
+async function refreshScanner() {
+  const data = await api('calls?limit=20');
+  if (!data) return;
+  state.allCalls = data.calls;
+  // Track newest call ID
+  if (data.calls.length && data.calls[0].id > state.lastSeenCallId) {
+    if (state.lastSeenCallId > 0) {
+      data.calls.forEach(c => { if (c.id > state.lastSeenCallId) state.newCallIds.add(c.id); });
+    }
+    state.lastSeenCallId = data.calls[0].id;
+  }
+  renderRecentList();
+}
+
+function renderRecentList() {
+  const el = document.getElementById('recent-list');
+  const calls = state.allCalls;
+  if (!calls.length) {
+    el.innerHTML = '<div class="empty-state"><p>No calls yet. Waiting for OP25 transmissions...</p></div>';
+    return;
+  }
+  el.innerHTML = calls.map(c => buildCallRow(c, { showNew: true })).join('');
+}
+
+/* =================================================================
+   CALL ROW BUILDER
+   ================================================================= */
+function buildCallRow(call, opts = {}) {
+  const cat = call.tg_category || 'other';
+  const isStarred = state.starred.includes(call.id);
+  const isPlaying = state.currentCall && state.currentCall.id === call.id;
+  const hasAudio = !!call.filepath;
+  const isNew = opts.showNew && state.newCallIds.has(call.id);
+  const transcript = opts.highlightQuery
+    ? highlightText(call.transcript || '', opts.highlightQuery)
+    : escHtml(call.transcript || '');
+
+  return `
+    <div class="call-row ${isPlaying ? 'playing' : ''}" onclick="playCallById(${call.id})" data-call-id="${call.id}">
+      <div class="cr-cat" style="background:${catColor(cat)}"></div>
+      <div class="cr-body">
+        <div class="cr-name">${escHtml(call.tg_name || 'TG ' + call.tgid)}</div>
+        ${transcript ? `<div class="cr-transcript">${transcript}</div>` : ''}
+        <div class="cr-meta">
+          <span>${call.start_time ? timeAgo(call.start_time) : ''}</span>
+          ${call.duration_s ? `<span>${call.duration_s.toFixed(1)}s</span>` : ''}
+        </div>
+      </div>
+      <div class="cr-right">
+        ${isNew ? '<span class="cr-new-badge">NEW</span>' : ''}
+        ${!hasAudio ? '<span class="cr-no-audio">no audio</span>' : ''}
+        <button class="cr-star-btn ${isStarred ? 'starred' : ''}" onclick="event.stopPropagation();toggleStar(${call.id})" title="Save">
+          ${isStarred ? IC.star : IC.starO}
+        </button>
+        ${hasAudio ? `<button class="cr-play-btn" onclick="event.stopPropagation();playCallById(${call.id})" title="Play">${IC.play}</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function highlightText(text, query) {
+  if (!query || !text) return escHtml(text);
+  const escaped = escHtml(text);
+  const qEsc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp('(' + qEsc + ')', 'gi'), '<mark>$1</mark>');
+}
+
+/* =================================================================
+   PLAYBACK ENGINE (decoupled from views)
+   ================================================================= */
+function playCallById(id) {
+  // Find the call in whatever data we have
+  let call = findCallById(id);
+  if (!call) return;
+  if (!call.filepath) {
+    // Skip to next if in live mode
+    return;
+  }
+  // If this call isn't in the playQueue, make a single-item queue
+  let idx = state.playQueue.findIndex(c => c.id === id);
+  if (idx < 0) {
+    state.playQueue = [call];
+    idx = 0;
+  }
+  state.playIndex = idx;
+  loadAndPlay(call);
+}
+
+function findCallById(id) {
+  // Search all known call lists
+  let c = state.allCalls.find(c => c.id === id);
+  if (c) return c;
+  c = state.searchResults.find(c => c.id === id);
+  if (c) return c;
+  c = state.playQueue.find(c => c.id === id);
+  return c || null;
+}
+
+function loadAndPlay(call) {
+  state.currentCall = call;
+  state.isBuffering = true;
+  state.isPlaying = true;
+  updateNowPlaying();
+  showNowPlaying();
+
+  audio.src = '/api/calls/' + call.id + '/audio';
+  audio.load();
+  audio.play().then(() => {
+    state.isBuffering = false;
+    updateNowPlaying();
+  }).catch(() => {
+    state.isBuffering = false;
+    // Auto-skip on error
+    if (state.liveMode) npNext();
+  });
+
+  // Remove from new set
+  state.newCallIds.delete(call.id);
+
+  // Update scanner face
+  updateScannerFace(call);
+  // Highlight current row in any visible list
+  highlightCurrentRow();
+}
+
+function updateScannerFace(call) {
+  const cat = call.tg_category || 'other';
+  const name = call.tg_name || 'TG ' + call.tgid;
+
+  // LED
+  const led = document.getElementById('led');
+  led.className = 'led';
+  if (state.holdMode) led.classList.add('holding');
+  else if (state.liveMode || state.isPlaying) led.classList.add('live');
+  else led.classList.add('idle');
+
+  // Label
+  document.getElementById('led-label').textContent =
+    state.holdMode ? 'HOLDING' : (state.liveMode ? 'LIVE' : (state.isPlaying ? 'PLAYING' : 'IDLE'));
+
+  // Status
+  const qLen = state.playQueue.length - state.playIndex - 1;
+  document.getElementById('scanner-status').innerHTML =
+    (state.holdMode ? 'Holding: ' + escHtml(name) : 'Scanning') +
+    (qLen > 0 ? ' <span class="queue-count">Q:' + qLen + '</span>' : '');
+
+  // Badge
+  const badge = document.getElementById('hero-badge');
+  badge.style.display = 'inline-block';
+  badge.style.background = catColor(cat);
+  badge.style.color = ['fire','ems'].includes(cat) ? '#fff' : '#000';
+  badge.textContent = catLabel(cat);
+
+  // Hero name
+  const heroEl = document.getElementById('hero-name');
+  heroEl.textContent = name;
+  heroEl.style.color = catColor(cat);
+
+  // Transcript
+  document.getElementById('hero-transcript').textContent = call.transcript || '';
+
+  // Show progress
+  document.getElementById('scanner-progress').style.visibility = 'visible';
+}
+
+function highlightCurrentRow() {
+  document.querySelectorAll('.call-row').forEach(r => {
+    r.classList.toggle('playing', state.currentCall && parseInt(r.dataset.callId) === state.currentCall.id);
+  });
+}
+
+function npNext() {
+  // Find next playable call
+  let idx = state.playIndex + 1;
+  while (idx < state.playQueue.length) {
+    const c = state.playQueue[idx];
+    if (c.filepath) {
+      state.playIndex = idx;
+      loadAndPlay(c);
+      return;
+    }
+    idx++;
+  }
+  // Queue exhausted
+  state.isPlaying = false;
+  updateNowPlaying();
+  updateLedState();
+}
+function npPrev() {
+  let idx = state.playIndex - 1;
+  while (idx >= 0) {
+    const c = state.playQueue[idx];
+    if (c.filepath) {
+      state.playIndex = idx;
+      loadAndPlay(c);
+      return;
+    }
+    idx--;
+  }
+}
+function npToggle() {
+  if (audio.paused && audio.src) {
+    audio.play();
+    state.isPlaying = true;
+  } else {
+    audio.pause();
+    state.isPlaying = false;
+  }
+  updateNowPlaying();
+  updateLedState();
+}
+function npSetVol(v) {
+  audio.volume = v / 100;
+  updateVolIcon();
+}
+function npMuteToggle() {
+  audio.muted = !audio.muted;
+  updateVolIcon();
+}
+function updateVolIcon() {
+  const icon = document.getElementById('np-vol-icon');
+  if (audio.muted || audio.volume === 0) {
+    icon.innerHTML = '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.796 8.796 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>';
+  } else {
+    icon.innerHTML = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>';
+  }
+}
+
+function showNowPlaying() {
+  document.getElementById('now-playing').classList.add('visible');
+  // Adjust padding
+  document.querySelector('.tab-content').style.paddingBottom = 'var(--np-height)';
+}
+
+function updateNowPlaying() {
+  if (!state.currentCall) return;
+  const c = state.currentCall;
+  document.getElementById('np-name').textContent = c.tg_name || 'TG ' + c.tgid;
+  document.getElementById('np-transcript').textContent = c.transcript || '';
+  // Play/pause icon
+  const btn = document.getElementById('np-play-icon');
+  btn.innerHTML = state.isPlaying && !audio.paused
+    ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
+    : '<path d="M8 5v14l11-7z"/>';
+  // Spinner
+  document.getElementById('np-spinner').classList.toggle('loading', state.isBuffering);
+  document.getElementById('np-play-btn').style.display = state.isBuffering ? 'none' : 'flex';
+}
+
+function seekNP(e) {
+  if (!audio.duration) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  audio.currentTime = pct * audio.duration;
+}
+function seekAudio(e) {
+  seekNP(e);
+}
+
+/* Audio events */
+audio.addEventListener('timeupdate', () => {
+  if (!audio.duration) return;
+  const pct = (audio.currentTime / audio.duration * 100).toFixed(1) + '%';
+  document.getElementById('np-fill').style.width = pct;
+  document.getElementById('sp-fill').style.width = pct;
+  document.getElementById('sp-current').textContent = fmtTime(audio.currentTime);
+  document.getElementById('sp-total').textContent = fmtTime(audio.duration);
+  document.getElementById('np-time').textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+});
+audio.addEventListener('ended', () => {
+  state.isPlaying = false;
+  updateNowPlaying();
+  updateLedState();
+  // Auto-advance in live mode or if queue has more
+  if (state.playIndex < state.playQueue.length - 1) {
+    npNext();
+  }
+});
+audio.addEventListener('waiting', () => {
+  state.isBuffering = true;
+  updateNowPlaying();
+});
+audio.addEventListener('canplay', () => {
+  state.isBuffering = false;
+  updateNowPlaying();
+});
+audio.addEventListener('error', () => {
+  state.isBuffering = false;
+  if (state.liveMode) npNext();
+});
+
+// Set initial volume
+audio.volume = 0.8;
+
+/* =================================================================
+   SCANNER CONTROLS
+   ================================================================= */
+function toggleLive() {
+  state.liveMode = !state.liveMode;
+  if (state.liveMode) {
+    state.holdMode = false;
+    state.holdTgid = null;
+  }
+  updateControlButtons();
+  updateLedState();
+}
+function toggleHold() {
+  if (!state.currentCall) return;
+  if (state.holdMode) {
+    state.holdMode = false;
+    state.holdTgid = null;
+  } else {
+    state.holdMode = true;
+    state.holdTgid = state.currentCall.tgid;
+    state.liveMode = false;
+  }
+  updateControlButtons();
+  updateLedState();
+  // Update status
+  if (state.currentCall) {
+    document.getElementById('scanner-status').innerHTML =
+      state.holdMode
+        ? 'Holding: ' + escHtml(state.currentCall.tg_name || 'TG ' + state.currentCall.tgid)
+        : 'Scanning';
+  }
+}
+function doSkip() {
+  npNext();
+}
+function doReplay() {
+  if (state.currentCall) {
+    audio.currentTime = 0;
+    audio.play();
+    state.isPlaying = true;
+    updateNowPlaying();
+    updateLedState();
+  }
+}
+
+function updateControlButtons() {
+  document.getElementById('btn-live').classList.toggle('active-live', state.liveMode);
+  document.getElementById('btn-hold').classList.toggle('active-hold', state.holdMode);
+}
+
+function updateLedState() {
+  const led = document.getElementById('led');
+  led.className = 'led';
+  if (state.holdMode) {
+    led.classList.add('holding');
+    document.getElementById('led-label').textContent = 'HOLDING';
+  } else if (state.isPlaying) {
+    led.classList.add('live');
+    document.getElementById('led-label').textContent = state.liveMode ? 'LIVE' : 'PLAYING';
+  } else if (state.liveMode) {
+    led.classList.add('live');
+    document.getElementById('led-label').textContent = 'SCANNING';
+  } else {
+    led.classList.add('idle');
+    document.getElementById('led-label').textContent = 'IDLE';
+  }
+}
+
+/* =================================================================
+   BROWSE TAB
+   ================================================================= */
+async function refreshBrowse() {
+  const data = await api('talkgroups');
+  if (!data) return;
+  state.talkgroups = data.talkgroups || [];
+
+  // Category pills
+  const cats = {};
+  state.talkgroups.forEach(tg => {
+    const c = tg.tg_category || 'other';
+    cats[c] = (cats[c] || 0) + 1;
+  });
+  const pillsEl = document.getElementById('cat-pills');
+  let pillsHtml = `<button class="cat-pill ${!state.browseCat ? 'active' : ''}" onclick="filterBrowse(null)">All</button>`;
+  Object.entries(cats).sort((a,b) => b[1] - a[1]).forEach(([c, n]) => {
+    pillsHtml += `<button class="cat-pill ${state.browseCat === c ? 'active' : ''}" onclick="filterBrowse('${c}')" style="${state.browseCat === c ? 'background:' + catColor(c) + ';color:#000;border-color:' + catColor(c) : ''}">${catLabel(c)} (${n})</button>`;
+  });
+  pillsEl.innerHTML = pillsHtml;
+
+  // Department cards
+  let tgs = state.talkgroups;
+  if (state.browseCat) tgs = tgs.filter(t => (t.tg_category || 'other') === state.browseCat);
+  // Sort: active first, then by call count
+  const now = Date.now() / 1000;
+  tgs.sort((a, b) => {
+    const aActive = a.last_call && (now - a.last_call < 300);
+    const bActive = b.last_call && (now - b.last_call < 300);
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
+    return (b.call_count || 0) - (a.call_count || 0);
+  });
+
+  const gridEl = document.getElementById('dept-grid');
+  if (!tgs.length) {
+    gridEl.innerHTML = '<div class="empty-state"><p>No departments found</p></div>';
+    return;
+  }
+  gridEl.innerHTML = tgs.map(tg => {
+    const cat = tg.tg_category || 'other';
+    const active = tg.last_call && (now - tg.last_call < 300);
+    return `
+      <div class="dept-card" onclick="showDeptDetail(${tg.tgid})">
+        <div class="dc-border" style="background:${catColor(cat)}"></div>
+        <div class="dc-top">
+          <div class="dc-name">${escHtml(tg.tg_name || 'TG ' + tg.tgid)}</div>
+          ${active ? '<div class="dc-active"></div>' : ''}
+        </div>
+        <div class="dc-count">${tg.call_count || 0} calls${tg.last_call ? ' &middot; ' + timeAgo(tg.last_call) : ''}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Show list view
+  document.getElementById('browse-list-view').style.display = 'block';
+  document.getElementById('browse-detail-view').style.display = 'none';
+}
+
+function filterBrowse(cat) {
+  state.browseCat = cat;
+  refreshBrowse();
+}
+
+async function showDeptDetail(tgid) {
+  state.browseDetailTgid = tgid;
+  const tg = state.talkgroups.find(t => t.tgid === tgid) || { tgid, tg_name: 'TG ' + tgid, tg_category: 'other' };
+  const cat = tg.tg_category || 'other';
+
+  document.getElementById('browse-list-view').style.display = 'none';
+  document.getElementById('browse-detail-view').style.display = 'block';
+
+  const detailEl = document.getElementById('dept-detail');
+  detailEl.innerHTML = '<div class="loading-overlay">Loading calls...</div>';
+
+  const data = await api('calls?tgid=' + tgid + '&limit=200');
+  const calls = data ? data.calls : [];
+
+  // Sort oldest first for chronological playback
+  const chronoCalls = calls.slice().reverse();
+
+  // Set playQueue for this department (oldest first for Play All)
+  // But display newest first for browsing
+  detailEl.innerHTML = `
+    <button class="dept-back" onclick="backToBrowse()">
+      <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      Departments
+    </button>
+    <div class="dept-detail-head">
+      <div class="cat-badge" style="background:${catColor(cat)};color:${['fire','ems'].includes(cat) ? '#fff' : '#000'}">${catLabel(cat)}</div>
+      <h2 style="color:${catColor(cat)}">${escHtml(tg.tg_name || 'TG ' + tgid)}</h2>
+      <div class="dh-meta">TG ${tgid} &middot; ${tg.call_count || calls.length} calls${tg.total_duration ? ' &middot; ' + fmtDuration(tg.total_duration) + ' total' : ''}</div>
+      <div class="dh-actions">
+        <button class="btn-sm" onclick="playDeptAll(${tgid})">
+          ${IC.play} Play All
+        </button>
+      </div>
+    </div>
+    ${calls.length
+      ? calls.map(c => buildCallRow(c)).join('')
+      : '<div class="empty-state"><p>No calls recorded for this department</p></div>'
+    }
+  `;
+
+  // Store chronological queue for Play All
+  state._deptChronoCalls = chronoCalls;
+}
+
+function playDeptAll(tgid) {
+  const calls = state._deptChronoCalls || [];
+  if (!calls.length) return;
+  state.playQueue = calls;
+  state.playIndex = -1;
+  // Find first with audio
+  for (let i = 0; i < calls.length; i++) {
+    if (calls[i].filepath) {
+      state.playIndex = i;
+      loadAndPlay(calls[i]);
+      return;
+    }
+  }
+}
+
+function backToBrowse() {
+  state.browseDetailTgid = null;
+  document.getElementById('browse-list-view').style.display = 'block';
+  document.getElementById('browse-detail-view').style.display = 'none';
+}
+
+/* =================================================================
+   SEARCH TAB
+   ================================================================= */
+let searchTimeout = null;
+document.getElementById('search-input').addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(doSearch, 300);
+});
+
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  state.searchQuery = q;
+  const infoEl = document.getElementById('search-info');
+  const resultsEl = document.getElementById('search-results');
+
+  if (q.length < 2) {
+    infoEl.textContent = '';
+    resultsEl.innerHTML = q.length > 0
+      ? '<div class="empty-state"><p>Type at least 2 characters to search</p></div>'
+      : '';
+    return;
+  }
+
+  const data = await api('calls?limit=100&search=' + encodeURIComponent(q));
+  if (!data) return;
+  state.searchResults = data.calls;
+
+  infoEl.textContent = data.calls.length + ' result' + (data.calls.length !== 1 ? 's' : '') + ' for "' + q + '"';
+  resultsEl.innerHTML = data.calls.length
+    ? data.calls.map(c => buildCallRow(c, { highlightQuery: q })).join('')
+    : '<div class="empty-state"><p>No results found for "' + escHtml(q) + '"</p></div>';
+}
+
+/* =================================================================
+   SAVED TAB
+   ================================================================= */
+async function refreshSaved() {
+  const el = document.getElementById('saved-list');
+  if (!state.starred.length) {
+    el.innerHTML = `<div class="empty-state">
+      ${IC.starO}
+      <p>Star calls you want to keep. They'll appear here.</p>
+    </div>`;
+    return;
+  }
+  const data = await api('calls?limit=500');
+  if (!data) return;
+  const saved = data.calls.filter(c => state.starred.includes(c.id));
+  state.playQueue = saved;
+  el.innerHTML = saved.length
+    ? saved.map(c => buildCallRow(c)).join('')
+    : '<div class="empty-state"><p>Starred calls may have expired</p></div>';
+}
+
+function toggleStar(callId) {
+  const idx = state.starred.indexOf(callId);
+  if (idx >= 0) state.starred.splice(idx, 1);
+  else state.starred.push(callId);
+  localStorage.setItem('scanpi_starred', JSON.stringify(state.starred));
+
+  // Re-render visible star buttons without full refresh
+  document.querySelectorAll(`.call-row[data-call-id="${callId}"] .cr-star-btn`).forEach(btn => {
+    const isNowStarred = state.starred.includes(callId);
+    btn.classList.toggle('starred', isNowStarred);
+    btn.innerHTML = isNowStarred ? IC.star : IC.starO;
+  });
+
+  if (state.tab === 'saved') refreshSaved();
+}
+
+/* =================================================================
+   SSE — REAL-TIME EVENTS
+   ================================================================= */
+function connectSSE() {
+  let es;
+  try {
+    es = new EventSource('/api/events');
+  } catch (e) {
+    setTimeout(connectSSE, 5000);
+    return;
+  }
+
+  es.addEventListener('new_call', (e) => {
+    try {
+      const call = JSON.parse(e.data);
+      handleNewCall(call);
+    } catch (err) {}
+  });
+
+  es.addEventListener('call_update', (e) => {
+    try {
+      const call = JSON.parse(e.data);
+      handleCallUpdate(call);
+    } catch (err) {}
+  });
+
+  es.onerror = () => {
+    es.close();
+    setTimeout(connectSSE, 3000);
+  };
+
+  es.onopen = () => {
+    setApiOk(true);
+  };
+}
+
+function handleNewCall(call) {
+  // Add to recent
+  state.allCalls.unshift(call);
+  if (state.allCalls.length > 50) state.allCalls.pop();
+  state.newCallIds.add(call.id);
+  state.lastSeenCallId = Math.max(state.lastSeenCallId, call.id);
+
+  // Update scanner recent list if visible
+  if (state.tab === 'scanner') renderRecentList();
+
+  // LIVE MODE: auto-queue and play
+  if (state.liveMode && call.filepath) {
+    // If holding, only queue matching tgid
+    if (state.holdMode && call.tgid !== state.holdTgid) return;
+    // If avoided, skip
+    if (isAvoided(call.tgid)) return;
+
+    state.playQueue.push(call);
+    // If nothing playing, start
+    if (!state.isPlaying || audio.paused || audio.ended) {
+      state.playIndex = state.playQueue.length - 1;
+      loadAndPlay(call);
+    }
+  }
+}
+
+function handleCallUpdate(call) {
+  // Update call in allCalls (e.g., transcript added after processing)
+  const idx = state.allCalls.findIndex(c => c.id === call.id);
+  if (idx >= 0) {
+    Object.assign(state.allCalls[idx], call);
+  }
+  // Update current call if it's the one playing
+  if (state.currentCall && state.currentCall.id === call.id) {
+    Object.assign(state.currentCall, call);
+    if (call.transcript) {
+      document.getElementById('hero-transcript').textContent = call.transcript;
+      document.getElementById('np-transcript').textContent = call.transcript;
+    }
+  }
+  if (state.tab === 'scanner') renderRecentList();
+}
+
+function isAvoided(tgid) {
+  const av = state.avoidedTgs[tgid];
+  if (!av) return false;
+  if (av.until && Date.now() > av.until) {
+    delete state.avoidedTgs[tgid];
+    return false;
+  }
+  return true;
+}
+
+/* =================================================================
+   KEYBOARD SHORTCUTS
+   ================================================================= */
+document.addEventListener('keydown', (e) => {
+  // Don't capture when typing in input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    if (e.key === 'Escape') e.target.blur();
+    return;
+  }
+
+  switch (e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      npToggle();
+      break;
+    case 'l':
+      toggleLive();
+      break;
+    case 'h':
+      toggleHold();
+      break;
+    case 's':
+      doSkip();
+      break;
+    case 'r':
+      doReplay();
+      break;
+    case '/':
+      e.preventDefault();
+      switchTab('search');
+      break;
+    case 'escape':
+      if (state.holdMode) { state.holdMode = false; state.holdTgid = null; updateControlButtons(); updateLedState(); }
+      if (state.browseDetailTgid) backToBrowse();
+      break;
+    default:
+      // 1-9: play Nth recent call
+      if (e.key >= '1' && e.key <= '9') {
+        const n = parseInt(e.key) - 1;
+        if (n < state.allCalls.length) {
+          const c = state.allCalls[n];
+          state.playQueue = state.allCalls.slice();
+          state.playIndex = n;
+          if (c.filepath) loadAndPlay(c);
+        }
+      }
+  }
+});
+
+/* =================================================================
+   AUTO-REFRESH
+   ================================================================= */
+function autoRefresh() {
+  if (state.tab === 'scanner') refreshScanner();
+  else if (state.tab === 'browse' && !state.browseDetailTgid) refreshBrowse();
+  else if (state.tab === 'saved') refreshSaved();
+}
+
+/* =================================================================
+   INIT
+   ================================================================= */
+async function init() {
+  // Initial load
+  await Promise.all([refreshScanner(), refreshBrowse()]);
+
+  // SSE
+  connectSSE();
+
+  // Periodic refresh (backup for SSE)
+  setInterval(autoRefresh, 8000);
+}
+
+init();
+</script>
+</body>
+</html>
