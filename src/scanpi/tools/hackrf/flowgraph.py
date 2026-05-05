@@ -298,14 +298,28 @@ def build_top_block(prof: Profile, on_audio: dict | None = None,
         recorders[spec.name] = rec
         probes[spec.name] = probe
 
+    # GR requires every output port of pfb_channelizer_ccf to be connected.
+    # Wire any unused channelizer outputs to null_sinks so the topology is valid.
+    used_indices = {spec.output_index for spec in prof.channels
+                    if 0 <= spec.output_index < M}
+    null_count = 0
+    for i in range(M):
+        if i not in used_indices:
+            ns = blocks.null_sink(gr.sizeof_gr_complex)
+            tb.connect((ch, i), ns)
+            null_count += 1
+    if null_count:
+        log.debug("wired %d null sinks for unused channelizer outputs", null_count)
+
     meta = {
         "channel_rate": chan_bw,
         "audio_rate": actual_audio_rate,
         "audio_decim": audio_decim,
         "channels_wired": len(recorders),
+        "null_sinks": null_count,
     }
-    log.info("HackRF flowgraph built: M=%d chan_bw=%d Hz audio=%d Hz channels=%d",
-             M, chan_bw, actual_audio_rate, len(recorders))
+    log.info("HackRF flowgraph built: M=%d chan_bw=%d Hz audio=%d Hz channels=%d nulls=%d",
+             M, chan_bw, actual_audio_rate, len(recorders), null_count)
     return tb, recorders, probes, meta
 
 
