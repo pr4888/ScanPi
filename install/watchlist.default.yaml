@@ -1,0 +1,112 @@
+# ScanPi keyword alert watchlist.
+#
+# Each entry triggers an MQTT publish to scanpi/alerts/<severity>/<source>
+# when matched against a transcript. Edit freely. Reload via
+# POST /tools/alerts/api/watchlist/reload.
+#
+# Patterns: 'plain' = case-insensitive substring; 'regex' = python re.
+# Severities: low | medium | high | critical
+# Categories: free-form tags. Useful for filtering on the dashboard.
+#
+# IMPORTANT: edit family-name placeholders before deploying. Don't ship a
+# scanner that buzzes for "Patrick" if you live in a town full of Patricks.
+
+# ---- Critical (drop everything, look) ---------------------------------
+- name: officer_down
+  pattern: "officer down"
+  type: plain
+  severity: critical
+  categories: [public_safety, le]
+
+- name: shots_fired
+  pattern: "shots fired"
+  type: plain
+  severity: critical
+  categories: [public_safety, le]
+
+- name: mayday
+  pattern: '\b(mayday|may day)\b'
+  type: regex
+  severity: critical
+  categories: [marine, distress]
+
+- name: structure_fire
+  pattern: '\b(structure fire|building fire|house fire)\b'
+  type: regex
+  severity: critical
+  categories: [fire]
+
+# ---- High (notable, want to know within minutes) ----------------------
+- name: code_3
+  pattern: "code 3"
+  type: plain
+  severity: high
+  categories: [public_safety]
+
+- name: pan_pan
+  pattern: '\b(pan[\- ]?pan)\b'
+  type: regex
+  severity: high
+  categories: [marine, distress]
+
+- name: mva
+  pattern: '\b(MVA|motor vehicle accident|car accident|crash)\b'
+  type: regex
+  severity: high
+  categories: [public_safety]
+
+- name: medical_emergency
+  pattern: '\b(cardiac|stroke|unconscious|not breathing|cpr|narcan)\b'
+  type: regex
+  severity: high
+  categories: [ems]
+
+# ---- Medium (background awareness) ------------------------------------
+- name: traffic_stop
+  pattern: '\btraffic stop\b'
+  type: regex
+  severity: medium
+  categories: [le]
+
+- name: alarm_burglar
+  pattern: '\b(burglar(y)?|alarm activation)\b'
+  type: regex
+  severity: medium
+  categories: [le]
+
+- name: child_missing
+  pattern: '\b(missing (child|juvenile)|amber alert)\b'
+  type: regex
+  severity: high
+  categories: [le, public_safety]
+
+# ---- Low (just log) ---------------------------------------------------
+- name: weather_advisory
+  pattern: '\b(thunderstorm|tornado|flood|small craft advisory)\b'
+  type: regex
+  severity: low
+  categories: [weather]
+
+# ---- Family / personal — EDIT THESE before deploying ------------------
+# Uncomment and customize. Default-disabled to avoid surprise pings.
+
+# - name: family_brianna
+#   pattern: '\bbrianna\b'
+#   type: regex
+#   severity: high
+#   categories: [family, personal]
+#   enabled: false
+
+# - name: home_street
+#   pattern: '\b(jefferson drive|jefferson dr)\b'
+#   type: regex
+#   severity: high
+#   categories: [home, personal]
+#   enabled: false
+
+# - name: vessel_name
+#   pattern: '\bMY_BOAT_NAME_HERE\b'
+#   type: regex
+#   severity: medium
+#   categories: [marine, personal]
+#   enabled: false

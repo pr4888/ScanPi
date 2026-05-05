@@ -282,11 +282,16 @@ class GmrsTool(Tool):
             s.peak_rssi = -120.0
         log.info("CLOSE ch=%-2d  dur=%5.1fs  peak=%6.1f dBFS", ch.num, duration, peak)
         if evt_id_to_transcribe is not None and clip_path:
-            self._transcriber.submit(TranscribeJob(
-                event_id=evt_id_to_transcribe,
-                clip_path=clip_path,
-                channel=ch.num,
-            ))
+            from ...profile import active_transcription_target
+            target = active_transcription_target()
+            if target in ("all", "gmrs"):
+                self._transcriber.submit(TranscribeJob(
+                    event_id=evt_id_to_transcribe,
+                    clip_path=clip_path,
+                    channel=ch.num,
+                ))
+            else:
+                self._db.set_transcript(evt_id_to_transcribe, None, "skipped")
 
     def _on_transcribe_result(self, event_id: int, text: str | None, status: str):
         alert_kind, alert_match = (scan_alerts(text) if status == "ok" else (None, None))

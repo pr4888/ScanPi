@@ -250,6 +250,13 @@ def create_app(registry: ToolRegistry, coordinator: SdrCoordinator) -> FastAPI:
     from fastapi.staticfiles import StaticFiles
     app = FastAPI(title="ScanPi")
 
+    # Profile + transcription target API at /v1/profile/*
+    try:
+        from .api_profile import router as profile_router
+        app.include_router(profile_router)
+    except Exception:
+        log.exception("profile router failed to mount; continuing")
+
     static_dir = Path(__file__).parent / "web"
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -359,6 +366,14 @@ def run_v3(host: str = "0.0.0.0", port: int = 8080,
     data_dir = data_dir or (Path.home() / "scanpi")
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load active profile (lite vs full) — drives feature flags in every tool.
+    try:
+        from . import profile as _profile
+        _profile.load_profile()
+        log.info("profile %r loaded", _profile.get("profile.name", "?"))
+    except Exception:
+        log.exception("profile loading failed; falling back to defaults")
+
     registry = ToolRegistry()
     # Pin each RTL-SDR tool to a specific stick by serial so coordinator
     # treats them as distinct devices (→ parallel operation).
@@ -386,6 +401,33 @@ def run_v3(host: str = "0.0.0.0", port: int = 8080,
         registry.register(YardstickTool(config={"data_dir": str(data_dir)}))
     except Exception:
         log.exception("YardstickTool failed to register (YS1 not present?); skipping")
+
+    # ---- v0.4.0 tools — non-SDR (auto-start) ----
+    try:
+        from .tools.search import SearchTool
+        registry.register(SearchTool(config={"data_dir": str(data_dir)}))
+    except Exception:
+        log.exception("SearchTool failed to register; skipping")
+
+    try:
+        from .tools.alerts import AlertsTool
+        registry.register(AlertsTool(config={"data_dir": str(data_dir)}))
+    except Exception:
+        log.exception("AlertsTool failed to register; skipping")
+
+    try:
+        from .tools.geo import GeoTool
+        registry.register(GeoTool(config={"data_dir": str(data_dir)}))
+    except Exception:
+        log.exception("GeoTool failed to register; skipping")
+
+    # ---- v0.4.0 tools — SDR-holding (HackRF, sdr_device=200) ----
+    # Guarded heavily because GR import + HackRF presence are both optional.
+    try:
+        from .tools.hackrf import HackrfTool
+        registry.register(HackrfTool(config={"data_dir": str(data_dir)}))
+    except Exception:
+        log.warning("HackrfTool failed to register (gnuradio missing or no HackRF?); skipping")
 
     coord = SdrCoordinator(registry, state_file=data_dir / "coordinator.json")
     coord.start_non_sdr_tools()

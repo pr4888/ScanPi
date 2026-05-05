@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ScanPi :: Alerts</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.tabs { display:flex; gap:6px; margin: 0 0 12px; flex-wrap:wrap; }
+.tabs button {
+  background: var(--bg-panel); color: var(--green-dim);
+  border: 1px solid var(--border); padding: 6px 14px;
+  font: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer; border-radius: 3px;
+}
+.tabs button.active {
+  color: var(--green-glow); border-color: var(--green-deep); background: var(--bg-header);
+}
+.tabs button:hover { color: var(--green); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; font-size:11px; }
+.toolbar select, .toolbar input {
+  background: var(--bg-panel); color: var(--green); border: 1px solid var(--border);
+  padding: 4px 6px; font: inherit; font-size: 11px;
+}
+
+.alert-row {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: 3px;
+  padding: 8px 10px; margin-bottom: 6px;
+}
+.alert-row.sev-low      { border-left-color: var(--green-dim); }
+.alert-row.sev-medium   { border-left-color: #e07400; }
+.alert-row.sev-high     { border-left-color: #ff7a00; }
+.alert-row.sev-critical { border-left-color: #ff2e2e; }
+.alert-row.acked { opacity: 0.55; }
+.alert-meta { display:flex; flex-wrap:wrap; gap:8px; font-size:10px; color: var(--green-dim); margin-bottom:4px; }
+.alert-meta .ts { color: var(--amber); font-variant-numeric: tabular-nums; }
+.alert-meta .src { text-transform: uppercase; letter-spacing:1px; color: var(--green-glow); }
+.alert-row .body { font-size:13px; color: var(--green); margin: 4px 0; word-break: break-word; }
+.alert-row .rules { font-size:10px; }
+.alert-row audio { height: 26px; max-width: 280px; vertical-align: middle; margin-top: 4px; display: block; }
+.alert-row .actions { margin-top:4px; }
+.alert-row .actions button {
+  background: var(--bg-panel); color: var(--green); border: 1px solid var(--green-deep);
+  padding: 2px 8px; font: inherit; font-size: 10px; cursor: pointer; border-radius: 2px;
+}
+.alert-row .actions button:hover { background: var(--green-deep); color: var(--green-glow); }
+
+.severity-pill {
+  display: inline-block; padding: 1px 6px; border-radius: 2px;
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; color:#000;
+}
+.severity-pill.sev-low      { background: var(--green-dim); color: #000; }
+.severity-pill.sev-medium   { background: #e07400; }
+.severity-pill.sev-high     { background: #ff7a00; }
+.severity-pill.sev-critical { background: #ff2e2e; color: #fff; }
+
+.rule-card {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  padding: 10px; margin-bottom: 6px; border-radius: 3px;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start;
+}
+.rule-card.disabled { opacity: 0.6; }
+.rule-card .rname { color: var(--green-glow); font-weight: 600; font-size: 13px; }
+.rule-card .rpattern { font-family: monospace; color: var(--amber); font-size: 11px; word-break: break-all; }
+.rule-card .rcats { font-size: 10px; color: var(--green-dim); }
+.rule-card .ractions { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.rule-card .ractions button {
+  background: var(--bg); color: var(--green); border: 1px solid var(--border);
+  padding: 2px 8px; font: inherit; font-size: 10px; cursor: pointer; border-radius: 2px;
+}
+.rule-card .ractions button.danger { color: #ff7a7a; border-color: #631a1a; }
+.rule-card .ractions button:hover { border-color: var(--green-deep); }
+
+.editor {
+  background: var(--bg-panel); border: 1px solid var(--green-deep);
+  padding: 10px; margin: 10px 0; border-radius: 3px;
+}
+.editor label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--green-dim); margin: 6px 0 2px; }
+.editor input, .editor select {
+  width: 100%; box-sizing: border-box;
+  background: var(--bg); color: var(--green);
+  border: 1px solid var(--border); padding: 6px; font: inherit; font-size: 12px;
+}
+.editor .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.editor .row > div { flex: 1 1 140px; min-width: 0; }
+.editor button {
+  background: var(--green-deep); color: var(--green-glow); border: 1px solid var(--green-glow);
+  padding: 6px 14px; font: inherit; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 1px;
+  cursor: pointer; border-radius: 2px; margin-top: 8px;
+}
+.editor button.cancel { background: var(--bg); color: var(--green-dim); border-color: var(--border); }
+.editor .err { color: #ff8080; font-size: 11px; margin-top: 4px; min-height: 14px; }
+
+.kv { font-size:11px; color:var(--green-dim); display:grid; grid-template-columns: 130px 1fr; gap:4px 12px; }
+.kv .k { color: var(--green-deep); text-transform: uppercase; letter-spacing:1px; font-size:10px; }
+.kv .v { color: var(--green); }
+
+pre.code {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 10px; overflow-x: auto; font-size: 11px; color: var(--green);
+  border-radius: 3px;
+}
+.snippet { margin: 12px 0 18px; }
+.snippet h3 { color: var(--green-glow); margin: 0 0 4px; font-size: 13px; }
+.snippet p  { color: var(--green-dim); font-size: 11px; margin: 0 0 6px; }
+
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; margin-right:4px; }
+.dot.ok { background: var(--green-glow); box-shadow: 0 0 4px var(--green-glow); }
+.dot.bad { background: #ff5e5e; box-shadow: 0 0 4px #ff5e5e; }
+.dot.warn { background: #e07400; }
+
+@media (max-width: 600px) {
+  .rule-card { grid-template-columns: 1fr; }
+  .rule-card .ractions { flex-direction: row; }
+  .alert-row audio { width: 100%; max-width: 100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; Alerts</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="status">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="tabs" role="tablist">
+    <button data-tab="live"      class="active">Live Alerts</button>
+    <button data-tab="watchlist">Watchlist</button>
+    <button data-tab="subscribe">Subscribe</button>
+  </div>
+
+  <!-- ---------- TAB: LIVE ALERTS ---------- -->
+  <section id="tab-live" class="tab-pane active">
+    <div class="toolbar">
+      <label>since
+        <select id="filter-since">
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h" selected>24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </label>
+      <label>severity
+        <select id="filter-severity">
+          <option value="">any</option>
+          <option value="critical">critical</option>
+          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="low">low</option>
+        </select>
+      </label>
+      <label>source
+        <select id="filter-source">
+          <option value="">any</option>
+          <option value="gmrs">GMRS</option>
+          <option value="op25">OP25</option>
+        </select>
+      </label>
+      <span id="alert-count" style="margin-left:auto;color:var(--amber)">—</span>
+    </div>
+    <div id="alerts-list">
+      <div style="color:var(--green-dim);font-size:11px">Loading…</div>
+    </div>
+  </section>
+
+  <!-- ---------- TAB: WATCHLIST ---------- -->
+  <section id="tab-watchlist" class="tab-pane">
+    <div class="toolbar">
+      <button id="btn-add-rule"
+        style="background:var(--green-deep);color:var(--green-glow);border:1px solid var(--green-glow);padding:6px 14px;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:2px">
+        + add rule
+      </button>
+      <span id="watchlist-count" style="margin-left:auto;color:var(--amber)">—</span>
+    </div>
+
+    <div id="rule-editor" class="editor" style="display:none">
+      <h2 id="editor-title" style="margin:0 0 4px">New rule</h2>
+      <div class="row">
+        <div>
+          <label>name</label>
+          <input id="ed-name" placeholder="officer_down">
+        </div>
+        <div>
+          <label>severity</label>
+          <select id="ed-severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium" selected>medium</option>
+            <option value="low">low</option>
+          </select>
+        </div>
+      </div>
+      <label>pattern (plain phrase or regex)</label>
+      <input id="ed-pattern" placeholder="officer down">
+      <label>categories (comma-separated)</label>
+      <input id="ed-cats" placeholder="police,emergency">
+      <label>mqtt topic suffix (optional)</label>
+      <input id="ed-suffix" placeholder="(blank)">
+      <label style="display:flex;align-items:center;gap:6px">
+        <input id="ed-enabled" type="checkbox" checked style="width:auto"> enabled
+      </label>
+      <div class="err" id="editor-err"></div>
+      <div>
+        <button id="btn-save-rule">save</button>
+        <button class="cancel" id="btn-cancel-rule">cancel</button>
+      </div>
+    </div>
+
+    <div id="rules-list">
+      <div style="color:var(--green-dim);font-size:11px">Loading…</div>
+    </div>
+  </section>
+
+  <!-- ---------- TAB: SUBSCRIBE ---------- -->
+  <section id="tab-subscribe" class="tab-pane">
+    <div class="panel" style="padding:10px;margin-bottom:12px">
+      <h2 style="margin:0 0 8px">MQTT broker</h2>
+      <div class="kv">
+        <div class="k">URL</div>           <div class="v" id="mqtt-url">—</div>
+        <div class="k">connected</div>     <div class="v" id="mqtt-connected">—</div>
+        <div class="k">paho-mqtt</div>     <div class="v" id="mqtt-available">—</div>
+        <div class="k">last error</div>    <div class="v" id="mqtt-error">—</div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:10px;margin-bottom:12px">
+      <h2 style="margin:0 0 6px">Topic format</h2>
+      <pre class="code">scanpi/alerts/&lt;severity&gt;/&lt;source&gt;[/&lt;suffix&gt;]
+
+severity = low | medium | high | critical
+source   = gmrs | op25
+
+Wildcard examples:
+  scanpi/alerts/#                # everything
+  scanpi/alerts/critical/#       # only critical
+  scanpi/alerts/+/op25           # all P25 alerts</pre>
+      <p style="font-size:11px;color:var(--green-dim);margin:6px 0 0">
+        Payload is JSON: <code>{ts, source, channel_or_tg, transcript, matched_rules,
+        audio_url, severity, hits[]}</code>
+      </p>
+    </div>
+
+    <div class="snippet">
+      <h3>ntfy.sh — easiest free push (Android + iOS app)</h3>
+      <p>Run once on your LAN. Subscribers point their app at <code>http://your-pi:8080/scanpi-alerts</code>.</p>
+      <pre class="code"># /etc/systemd/system/ntfy-bridge.service
+[Unit]
+Description=MQTT -> ntfy alert bridge
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/ntfy_bridge.py
+Restart=always
+User=scanpi
+
+[Install]
+WantedBy=multi-user.target</pre>
+      <pre class="code"># /opt/ntfy_bridge.py — about 20 lines
+import json, paho.mqtt.client as mqtt, urllib.request
+
+NTFY = "http://localhost:8080/scanpi-alerts"
+
+def on_msg(c, u, m):
+    p = json.loads(m.payload.decode())
+    title = f"[{p['severity'].upper()}] {p.get('channel_or_tg','')}".strip()
+    body  = p.get("transcript", "")
+    headers = {"Title": title, "Priority":
+               {"critical":"5","high":"4","medium":"3","low":"2"}.get(p["severity"],"3"),
+               "Tags": ",".join(p.get("matched_rules", []))}
+    urllib.request.urlopen(urllib.request.Request(NTFY, data=body.encode(), headers=headers))
+
+c = mqtt.Client()
+c.connect("localhost", 1883, 60)
+c.subscribe("scanpi/alerts/#"); c.on_message = on_msg
+c.loop_forever()</pre>
+    </div>
+
+    <div class="snippet">
+      <h3>Pushover — for paid push w/ priority + sounds</h3>
+      <p>Drop-in script that subscribes to MQTT and forwards to the Pushover API.</p>
+      <pre class="code"># pushover_bridge.py — set PUSHOVER_USER + PUSHOVER_TOKEN env vars
+import json, os, urllib.request, urllib.parse, paho.mqtt.client as mqtt
+
+USER, TOKEN = os.environ["PUSHOVER_USER"], os.environ["PUSHOVER_TOKEN"]
+PRIORITY = {"low":-1, "medium":0, "high":1, "critical":2}
+
+def on_msg(c, u, m):
+    p = json.loads(m.payload.decode())
+    data = urllib.parse.urlencode({
+        "user": USER, "token": TOKEN,
+        "title": f"[{p['severity'].upper()}] {p.get('channel_or_tg','')}",
+        "message": p.get("transcript", ""),
+        "priority": PRIORITY.get(p["severity"], 0),
+        # priority=2 needs retry+expire:
+        "retry": 60, "expire": 600,
+        "sound": "siren" if p["severity"] == "critical" else "pushover",
+    }).encode()
+    urllib.request.urlopen("https://api.pushover.net/1/messages.json", data=data)
+
+c = mqtt.Client(); c.connect("localhost", 1883, 60)
+c.subscribe("scanpi/alerts/#"); c.on_message = on_msg
+c.loop_forever()</pre>
+    </div>
+
+    <div class="snippet">
+      <h3>Home Assistant — MQTT integration</h3>
+      <p>Add this to <code>configuration.yaml</code>; alerts show up as a sensor + trigger automations.</p>
+      <pre class="code">mqtt:
+  sensor:
+    - name: "ScanPi Alert"
+      state_topic: "scanpi/alerts/+/+/#"
+      value_template: "{{ value_json.severity }}"
+      json_attributes_topic: "scanpi/alerts/+/+/#"
+
+automation:
+  - alias: "ScanPi critical alert"
+    trigger:
+      - platform: mqtt
+        topic: "scanpi/alerts/critical/#"
+    action:
+      - service: notify.mobile_app_my_phone
+        data:
+          title: "ScanPi CRITICAL"
+          message: "{{ trigger.payload_json.transcript }}"
+          data:
+            channel: alerts
+            ttl: 0
+            priority: high</pre>
+    </div>
+
+    <div class="snippet">
+      <h3>Tasker (Android) — MQTT plugin</h3>
+      <p>Use the "MQTT Client" plugin from Play Store. Configure:</p>
+      <pre class="code">Broker:    your-pi.local:1883
+Topic:     scanpi/alerts/#
+QoS:       1
+On message Tasker task:
+  1. Variable Set %sev TO %mqtt_payload (parse JSON: $.severity)
+  2. Notify  Title=ScanPi %sev  Text=%mqtt_payload (parse $.transcript)
+  3. If %sev == critical -> Vibrate Pattern: 0,400,200,400</pre>
+    </div>
+
+    <p style="font-size:11px;color:var(--green-dim);margin-top:18px">
+      See <code>tools/alerts/SUBSCRIBERS.md</code> on the Pi for the full deployment guide.
+    </p>
+  </section>
+</main>
+
+<script>
+const fmt = {
+  time: ts => ts ? new Date(ts*1000).toLocaleString() : "—",
+  ago:  ts => { if(!ts) return "never"; const a=Date.now()/1000-ts;
+    if(a<60) return Math.floor(a)+"s ago"; if(a<3600) return Math.floor(a/60)+"m ago";
+    if(a<86400) return Math.floor(a/3600)+"h ago"; return Math.floor(a/86400)+"d ago"; },
+  esc: s => (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),
+};
+
+// ----- Tab switching -----
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.addEventListener("click", () => {
+    const tab = b.dataset.tab;
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".tab-pane").forEach(p =>
+      p.classList.toggle("active", p.id === "tab-"+tab));
+    if (tab === "watchlist") loadWatchlist();
+    if (tab === "subscribe") loadHealth();
+    if (tab === "live") loadAlerts();
+  });
+});
+
+// ----- LIVE ALERTS -----
+async function loadAlerts() {
+  const since   = document.getElementById("filter-since").value;
+  const severity = document.getElementById("filter-severity").value;
+  const source   = document.getElementById("filter-source").value;
+  let url = `api/alerts?since=${encodeURIComponent(since)}&limit=200`;
+  if (severity) url += `&severity=${severity}`;
+  if (source)   url += `&source=${source}`;
+  const list = document.getElementById("alerts-list");
+  try {
+    const r = await fetch(url).then(r => r.json());
+    document.getElementById("alert-count").textContent =
+      `${r.count} alerts in window`;
+    if (!r.alerts.length) {
+      list.innerHTML = '<div style="color:var(--green-dim);font-size:11px;padding:14px">No alerts yet.</div>';
+      return;
+    }
+    list.innerHTML = r.alerts.map(renderAlert).join("");
+  } catch (e) {
+    list.innerHTML = `<div style="color:#ff8080">Error: ${fmt.esc(e+"")}</div>`;
+  }
+}
+function renderAlert(a) {
+  const rules = (a.rules_matched || []).map(n =>
+    `<span class="alert-badge ${a.severity==="critical"?"emergency":(a.severity==="high"?"pursuit":(a.severity==="medium"?"medical":""))}">${fmt.esc(n)}</span>`
+  ).join(" ");
+  const audio = a.audio_url
+    ? `<audio controls preload="none" src="${fmt.esc(a.audio_url)}"></audio>`
+    : "";
+  const ackBtn = a.ack_ts
+    ? `<span style="color:var(--green-dim);font-size:10px">acked ${fmt.ago(a.ack_ts)}</span>`
+    : `<button onclick="ack(${a.id})">ack</button>`;
+  return `
+    <div class="alert-row sev-${a.severity}${a.ack_ts ? " acked" : ""}">
+      <div class="alert-meta">
+        <span class="severity-pill sev-${a.severity}">${a.severity}</span>
+        <span class="src">${fmt.esc(a.source)}</span>
+        <span>${fmt.esc(a.channel || "")}</span>
+        <span class="ts" title="${fmt.time(a.ts)}">${fmt.ago(a.ts)}</span>
+      </div>
+      <div class="body">${fmt.esc(a.transcript || "(no transcript)")}</div>
+      <div class="rules">${rules}</div>
+      ${audio}
+      <div class="actions">${ackBtn}</div>
+    </div>`;
+}
+async function ack(id) {
+  try {
+    await fetch(`api/alerts/${id}/ack`, {method:"POST"});
+    loadAlerts();
+  } catch (e) {}
+}
+["filter-since","filter-severity","filter-source"].forEach(id =>
+  document.getElementById(id).addEventListener("change", loadAlerts));
+
+// ----- WATCHLIST -----
+async function loadWatchlist() {
+  const list = document.getElementById("rules-list");
+  try {
+    const r = await fetch("api/watchlist").then(r => r.json());
+    document.getElementById("watchlist-count").textContent = `${r.count} rules`;
+    if (!r.rules.length) {
+      list.innerHTML = '<div style="color:var(--green-dim);font-size:11px;padding:14px">No rules.</div>';
+      return;
+    }
+    list.innerHTML = r.rules.map(renderRule).join("");
+  } catch (e) {
+    list.innerHTML = `<div style="color:#ff8080">Error: ${fmt.esc(e+"")}</div>`;
+  }
+}
+function renderRule(r) {
+  const cats = (r.categories || []).map(c => `<span style="background:var(--bg);padding:0 4px;border:1px solid var(--border);border-radius:2px">${fmt.esc(c)}</span>`).join(" ");
+  return `
+    <div class="rule-card${r.enabled ? "" : " disabled"}">
+      <div>
+        <div class="rname">${fmt.esc(r.name)}
+          <span class="severity-pill sev-${r.severity}">${r.severity}</span>
+          ${r.enabled ? "" : '<span style="color:var(--green-deep);font-size:10px;text-transform:uppercase;letter-spacing:1px">disabled</span>'}
+        </div>
+        <div class="rpattern">${fmt.esc(r.pattern)}</div>
+        <div class="rcats" style="margin-top:4px">${cats}${r.mqtt_topic_suffix ? ` &middot; topic: scanpi/alerts/.../${fmt.esc(r.mqtt_topic_suffix)}` : ""}</div>
+      </div>
+      <div class="ractions">
+        <button onclick='editRule(${JSON.stringify(r)})'>edit</button>
+        <button class="danger" onclick="deleteRule(${JSON.stringify(r.name)})">delete</button>
+      </div>
+    </div>`;
+}
+function editRule(r) {
+  document.getElementById("editor-title").textContent = "Edit: " + r.name;
+  document.getElementById("ed-name").value = r.name;
+  document.getElementById("ed-name").disabled = true;  // name is the key
+  document.getElementById("ed-pattern").value = r.pattern;
+  document.getElementById("ed-severity").value = r.severity;
+  document.getElementById("ed-cats").value = (r.categories || []).join(",");
+  document.getElementById("ed-suffix").value = r.mqtt_topic_suffix || "";
+  document.getElementById("ed-enabled").checked = !!r.enabled;
+  document.getElementById("editor-err").textContent = "";
+  document.getElementById("rule-editor").style.display = "block";
+}
+function newRule() {
+  document.getElementById("editor-title").textContent = "New rule";
+  document.getElementById("ed-name").value = "";
+  document.getElementById("ed-name").disabled = false;
+  document.getElementById("ed-pattern").value = "";
+  document.getElementById("ed-severity").value = "medium";
+  document.getElementById("ed-cats").value = "";
+  document.getElementById("ed-suffix").value = "";
+  document.getElementById("ed-enabled").checked = true;
+  document.getElementById("editor-err").textContent = "";
+  document.getElementById("rule-editor").style.display = "block";
+}
+document.getElementById("btn-add-rule").addEventListener("click", newRule);
+document.getElementById("btn-cancel-rule").addEventListener("click", () => {
+  document.getElementById("rule-editor").style.display = "none";
+});
+document.getElementById("btn-save-rule").addEventListener("click", async () => {
+  const cats = document.getElementById("ed-cats").value
+    .split(",").map(s => s.trim()).filter(Boolean);
+  const body = {
+    name: document.getElementById("ed-name").value.trim(),
+    pattern: document.getElementById("ed-pattern").value,
+    severity: document.getElementById("ed-severity").value,
+    categories: cats,
+    mqtt_topic_suffix: document.getElementById("ed-suffix").value.trim(),
+    enabled: document.getElementById("ed-enabled").checked,
+  };
+  document.getElementById("editor-err").textContent = "";
+  try {
+    const res = await fetch("api/watchlist", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      document.getElementById("editor-err").textContent = j.detail || ("HTTP " + res.status);
+      return;
+    }
+    document.getElementById("rule-editor").style.display = "none";
+    loadWatchlist();
+  } catch (e) {
+    document.getElementById("editor-err").textContent = e + "";
+  }
+});
+async function deleteRule(name) {
+  if (!confirm("Delete rule: " + name + "?")) return;
+  await fetch("api/watchlist/" + encodeURIComponent(name), {method:"DELETE"});
+  loadWatchlist();
+}
+
+// ----- HEALTH / SUBSCRIBE TAB -----
+async function loadHealth() {
+  try {
+    const h = await fetch("api/alerts/health").then(r => r.json());
+    document.getElementById("mqtt-url").textContent = h.mqtt.url || "—";
+    const conn = h.mqtt.connected;
+    document.getElementById("mqtt-connected").innerHTML = conn
+      ? '<span class="dot ok"></span>connected'
+      : '<span class="dot bad"></span>not connected';
+    document.getElementById("mqtt-available").innerHTML = h.mqtt.available
+      ? '<span class="dot ok"></span>installed'
+      : '<span class="dot warn"></span>NOT installed (pip install paho-mqtt)';
+    document.getElementById("mqtt-error").textContent = h.mqtt.last_error || "(none)";
+  } catch (e) {
+    document.getElementById("mqtt-url").textContent = "error: " + e;
+  }
+}
+
+// ----- HEADER STATUS -----
+async function refreshHeader() {
+  try {
+    const h = await fetch("api/alerts/health").then(r => r.json());
+    const counts = h.counts || {};
+    const conn = h.mqtt.enabled
+      ? (h.mqtt.connected ? '<span class="dot ok"></span>mqtt' : '<span class="dot bad"></span>mqtt offline')
+      : '<span class="dot warn"></span>mqtt off';
+    document.getElementById("status").innerHTML =
+      `${conn} &middot; ${h.watchlist.enabled}/${h.watchlist.rules} rules &middot; ${counts.total||0} alerts (${counts.unacked||0} unacked)`;
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {}
+}
+
+// init
+loadAlerts();
+refreshHeader();
+setInterval(loadAlerts,    5000);
+setInterval(refreshHeader, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+# ScanPi SDR profile — HackRF One :: VHF analog public safety (CT, New London County)
+#
+# Per Heimdall keepers.md known-active analog public safety on VHF in
+# Groton/New London CT (CSP itself is P25 digital and is NOT covered here):
+#
+#   151.295 MHz  GROTON_FIRE     (dispatch, confirmed active)
+#   154.0625    ELYME_FIRE      (East Lyme)
+#   155.775     STON_FIRE       (Stonington)
+#   154.265     INTCITY_FA      (statewide mutual-aid intercity fireground)
+#
+# Plus the common VHF-hi public-service slots that may be in use seasonally
+# (USFS / NPS / state, MURS, common itinerant). Span 151.295 -> 156.150 MHz
+# (~4.9 MHz). Center 153.5 MHz, 8 Msps -> [149.5, 157.5] MHz window covers all
+# of it (with margin) — does NOT cover marine VHF (use hackrf_marine_vhf for that).
+#
+# Source: RadioReference / Broadcastify, frequency catalog in
+#   .claude/rules/keepers.md ("Fire/Police freqs (Groton CT)").
+
+[sdr]
+id          = "hackrf_vhf_public_safety"
+driver      = "hackrf"
+serial      = ""
+center_hz   = 153_500_000
+sample_rate = 8_000_000
+gain        = "lna=24,vga=20,amp=0"
+front_end   = "VHF-hi 150-160 MHz BPF / SAW"
+
+[channelizer]
+type            = "pfb"
+num_chans       = 32
+attenuation_db  = 80.0
+taps_window     = "blackman-harris"
+transition_frac = 0.20
+
+# ---- Confirmed active fire / EMS analog ----
+[[channels]]
+name       = "GROTON_FIRE"
+freq_hz    = 151_295_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Groton (CT) fire dispatch — confirmed active analog"
+
+[[channels]]
+name       = "ELYME_FIRE"
+freq_hz    = 154_062_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "East Lyme fire — analog NFM"
+
+[[channels]]
+name       = "STON_FIRE"
+freq_hz    = 155_775_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Stonington fire — analog NFM"
+
+[[channels]]
+name       = "INTCITY_FA"
+freq_hz    = 154_265_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Statewide mutual-aid intercity fireground"
+
+# ---- Common VHF-hi public service / state pool ----
+[[channels]]
+name       = "VFIRE-21"
+freq_hz    = 154_280_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE21 — national mutual aid"
+
+[[channels]]
+name       = "VFIRE-22"
+freq_hz    = 154_295_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE22"
+
+[[channels]]
+name       = "VFIRE-23"
+freq_hz    = 154_310_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE23"
+
+[[channels]]
+name       = "VFIRE-24"
+freq_hz    = 154_325_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE24"
+
+[[channels]]
+name       = "VFIRE-25"
+freq_hz    = 154_340_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE25"
+
+[[channels]]
+name       = "VFIRE-26"
+freq_hz    = 154_355_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VFIRE26"
+
+# ---- VLAW (state law enforcement mutual-aid) ----
+[[channels]]
+name       = "VLAW-31"
+freq_hz    = 155_475_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VLAW31 — national LE mutual aid"
+
+[[channels]]
+name       = "VLAW-32"
+freq_hz    = 155_490_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VLAW32"
+
+# ---- VMED (EMS national mutual aid) ----
+[[channels]]
+name       = "VMED-28"
+freq_hz    = 155_340_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VMED28 / HEAR — national EMS mutual aid"
+
+[[channels]]
+name       = "VMED-29"
+freq_hz    = 155_205_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "VMED29"
+
+# ---- MURS (152-154 MHz, Part 95J, license-free, 2 W) ----
+[[channels]]
+name       = "MURS-1"
+freq_hz    = 151_820_000
+demod      = "nfm"
+bw_hz      = 11_250
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "MURS 1 (license-free)"
+
+[[channels]]
+name       = "MURS-2"
+freq_hz    = 151_880_000
+demod      = "nfm"
+bw_hz      = 11_250
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "MURS 2"
+
+[[channels]]
+name       = "MURS-3"
+freq_hz    = 151_940_000
+demod      = "nfm"
+bw_hz      = 11_250
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "MURS 3"
+
+[[channels]]
+name       = "MURS-4"
+freq_hz    = 154_570_000
+demod      = "nfm"
+bw_hz      = 20_000
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "MURS 4 (Color Dot Blue, 20 kHz wide)"
+
+[[channels]]
+name       = "MURS-5"
+freq_hz    = 154_600_000
+demod      = "nfm"
+bw_hz      = 20_000
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "MURS 5 (Color Dot Green, 20 kHz wide)"
+
+# ---- Highway / state DOT ----
+[[channels]]
+name       = "CT-DOT-1"
+freq_hz    = 156_135_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "CT highway maintenance (representative)"
+
+[[channels]]
+name       = "CT-DOT-2"
+freq_hz    = 156_150_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "CT highway maintenance (representative)"

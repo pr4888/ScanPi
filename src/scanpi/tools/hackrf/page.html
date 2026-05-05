@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScanPi :: HackRF Wideband</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+  .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:14px; }
+  .tab { padding:8px 14px; cursor:pointer; border:1px solid transparent; border-bottom:none;
+         color:var(--green-dim); background:transparent; font-family:inherit; font-size:12px;
+         text-transform:uppercase; letter-spacing:1px; }
+  .tab.active { color:var(--green); background:var(--bg-panel); border-color:var(--border);
+                border-bottom:1px solid var(--bg-panel); margin-bottom:-1px; }
+  .tab:hover { color:var(--green); }
+  .panel { background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:10px; }
+  .ch-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:8px; }
+  .ch-card { background:var(--bg-panel); border:1px solid var(--border); border-radius:4px;
+             padding:8px; font-size:11px; }
+  .ch-card.open { border-color:var(--green-glow); box-shadow:0 0 8px rgba(0,255,102,0.3); }
+  .ch-name { font-size:13px; color:var(--green); font-weight:600; }
+  .ch-freq { color:var(--amber); font-variant-numeric:tabular-nums; }
+  .ch-rssi { display:inline-block; min-width:48px; text-align:right; font-variant-numeric:tabular-nums; }
+  .ch-meta { color:var(--green-dim); font-size:10px; margin-top:4px; }
+  .meter { height:6px; background:var(--bg); border:1px solid var(--border); border-radius:2px;
+           margin-top:4px; overflow:hidden; }
+  .meter-fill { height:100%; background:var(--green); width:0; transition: width 0.2s; }
+  .meter-fill.open { background:var(--green-glow); }
+  .meter-fill.hot  { background:var(--hot); }
+  .badge { display:inline-block; padding:1px 6px; border:1px solid var(--green-deep);
+           border-radius:2px; color:var(--green); font-size:10px; }
+  .badge.open { background:var(--green); color:var(--bg); border-color:var(--green-glow); }
+  table.events { width:100%; border-collapse:collapse; font-size:12px; }
+  table.events th, table.events td { padding:5px 7px; border-bottom:1px solid var(--border); text-align:left; }
+  table.events th { color:var(--amber); text-transform:uppercase; font-size:10px; letter-spacing:1px; }
+  table.events tr:hover { background:rgba(111,255,157,0.04); }
+  textarea.toml-editor { width:100%; min-height:480px; background:var(--bg);
+                        color:var(--green); border:1px solid var(--border);
+                        font-family:ui-monospace, "JetBrains Mono", monospace; font-size:12px;
+                        padding:8px; box-sizing:border-box; }
+  .btn { padding:6px 12px; background:var(--bg-panel); color:var(--green);
+         border:1px solid var(--green-dim); cursor:pointer; font-family:inherit;
+         font-size:11px; text-transform:uppercase; letter-spacing:1px; }
+  .btn:hover { background:var(--green-deep); border-color:var(--green); }
+  .btn-warn { color:var(--amber); border-color:var(--amber-dim); }
+  .btn-warn:hover { background:var(--amber-deep); }
+  select.preset-select { background:var(--bg-panel); color:var(--green);
+                         border:1px solid var(--border); padding:5px 8px;
+                         font-family:inherit; font-size:11px; }
+  .health-row { display:flex; gap:24px; flex-wrap:wrap; margin:10px 0; }
+  .health-item { font-size:11px; }
+  .health-item .label { color:var(--green-dim); text-transform:uppercase; letter-spacing:1px; font-size:10px; }
+  .health-item .val { color:var(--green); font-size:13px; }
+  .health-item .val.bad { color:var(--hot); }
+  .pre { background:var(--bg); border:1px solid var(--border); padding:8px;
+         font-family:ui-monospace, monospace; font-size:11px; white-space:pre-wrap;
+         max-height:200px; overflow:auto; }
+  .msg { font-size:11px; padding:6px 10px; border-radius:3px; margin:8px 0; display:none; }
+  .msg.ok   { background:var(--green-deep); color:var(--green); display:block; }
+  .msg.err  { background:var(--amber-deep); color:var(--hot); border:1px solid var(--hot); display:block; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; HackRF Wideband</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="tabs">
+    <button class="tab active" data-tab="channels">Channels</button>
+    <button class="tab" data-tab="events">Events</button>
+    <button class="tab" data-tab="profile">Profile</button>
+    <button class="tab" data-tab="health">Health</button>
+  </div>
+
+  <!-- ============================================ TAB: CHANNELS -->
+  <section id="tab-channels" class="tab-pane">
+    <div class="health-row">
+      <div class="health-item"><div class="label">Profile</div><div class="val" id="p-id">—</div></div>
+      <div class="health-item"><div class="label">Center</div><div class="val" id="p-center">—</div></div>
+      <div class="health-item"><div class="label">Sample rate</div><div class="val" id="p-sr">—</div></div>
+      <div class="health-item"><div class="label">Channels</div><div class="val" id="p-nch">—</div></div>
+      <div class="health-item"><div class="label">PFB M</div><div class="val" id="p-m">—</div></div>
+      <div class="health-item"><div class="label">Channel BW</div><div class="val" id="p-bw">—</div></div>
+    </div>
+    <div class="ch-grid" id="ch-grid"><div style="color:var(--green-dim);font-size:11px">Loading channels…</div></div>
+  </section>
+
+  <!-- ============================================ TAB: EVENTS -->
+  <section id="tab-events" class="tab-pane" style="display:none">
+    <div style="margin:6px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <label style="font-size:11px;color:var(--green-dim)">Since
+        <select id="since" style="background:var(--bg-panel);color:var(--green);border:1px solid var(--border)">
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h" selected>24h</option>
+          <option value="7d">7 days</option>
+        </select>
+      </label>
+      <label style="font-size:11px;color:var(--green-dim)">Channel
+        <select id="ev-channel" style="background:var(--bg-panel);color:var(--green);border:1px solid var(--border)">
+          <option value="">all</option>
+        </select>
+      </label>
+      <button class="btn" id="ev-refresh">refresh</button>
+      <span id="ev-count" style="color:var(--amber);font-size:11px"></span>
+    </div>
+    <table class="events" id="events-table">
+      <thead><tr>
+        <th>Time</th><th>Channel</th><th>Freq</th>
+        <th>Dur</th><th>Peak dBFS</th><th>Audio</th><th>Transcript</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- ============================================ TAB: PROFILE -->
+  <section id="tab-profile" class="tab-pane" style="display:none">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px">
+      <label style="font-size:11px;color:var(--green-dim)">Preset
+        <select id="preset-select" class="preset-select"><option>Loading…</option></select>
+      </label>
+      <button class="btn" id="apply-preset">apply preset</button>
+      <span style="flex:1"></span>
+      <button class="btn" id="reload-toml">reload</button>
+      <button class="btn btn-warn" id="apply-toml">save &amp; restart</button>
+    </div>
+    <div class="msg" id="profile-msg"></div>
+    <textarea class="toml-editor" id="toml-editor" spellcheck="false"></textarea>
+    <div style="font-size:10px; color:var(--green-dim); margin-top:6px">
+      Schema: [sdr] center_hz / sample_rate / gain · [channelizer] num_chans · [[channels]] name / freq_hz / demod / bw_hz / squelch_db.
+      Validation: every channel.freq_hz must lie inside [center − sr/2, center + sr/2].
+    </div>
+  </section>
+
+  <!-- ============================================ TAB: HEALTH -->
+  <section id="tab-health" class="tab-pane" style="display:none">
+    <div class="health-row" id="health-row"></div>
+    <h2 style="font-size:12px;margin-top:18px">Device info (hackrf_info)</h2>
+    <div class="pre" id="hk-device">—</div>
+    <h2 style="font-size:12px;margin-top:18px">USB topology (lsusb -t)</h2>
+    <div class="pre" id="hk-usb">—</div>
+    <h2 style="font-size:12px;margin-top:18px">Flowgraph meta</h2>
+    <div class="pre" id="hk-meta">—</div>
+  </section>
+</main>
+
+<script>
+const API = "api";
+
+const fmt = {
+  hz: hz => hz == null ? "—" : (hz / 1e6).toFixed(4) + " MHz",
+  msps: hz => hz == null ? "—" : (hz / 1e6).toFixed(2) + " Msps",
+  dur: s => s == null ? "—" : s < 60 ? s.toFixed(1)+"s" : (s/60).toFixed(1)+"m",
+  rssi: d => d == null ? "—" : d.toFixed(1),
+  ts:  t => t ? new Date(t*1000).toLocaleString() : "—",
+};
+
+// ---------- tab switcher ----------
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const target = btn.dataset.tab;
+    document.querySelectorAll(".tab-pane").forEach(p => p.style.display = "none");
+    document.getElementById("tab-"+target).style.display = "block";
+    if (target === "events") loadEvents();
+    if (target === "profile") loadProfileEditor();
+    if (target === "health") loadHealth();
+  });
+});
+
+// ---------- Channels tab ----------
+async function loadChannels(){
+  try {
+    const data = await fetch(API+"/channels").then(r=>r.json());
+    document.getElementById("p-center").textContent = fmt.hz(data.center_hz);
+    document.getElementById("p-sr").textContent = fmt.msps(data.sample_rate);
+    document.getElementById("p-nch").textContent = (data.channels||[]).length;
+    document.getElementById("p-m").textContent = data.num_chans ?? "—";
+    document.getElementById("p-bw").textContent = data.channel_bw_hz
+      ? (data.channel_bw_hz/1e3).toFixed(1)+" kHz" : "—";
+    const grid = document.getElementById("ch-grid");
+    if (!data.channels || !data.channels.length) {
+      grid.innerHTML = '<div style="color:var(--green-dim);font-size:11px">No channels in profile.</div>';
+      return;
+    }
+    // RSSI normalization: assume -90..-20 dBFS range for the meter
+    const meterPct = r => {
+      if (r == null) return 0;
+      return Math.max(0, Math.min(100, (r + 90) * 100 / 70));
+    };
+    grid.innerHTML = data.channels.map(c => {
+      const open = c.open;
+      const lastTx = c.last_activity_ts
+        ? `<div class="ch-meta">last TX: ${fmt.ts(c.last_activity_ts)}</div>` : "";
+      const meterCls = open ? "open" : (c.last_rssi != null && c.last_rssi > c.squelch_db ? "hot" : "");
+      return `<div class="ch-card ${open?"open":""}">
+        <div class="ch-name">${c.name} ${open?'<span class="badge open">OPEN</span>':''}</div>
+        <div class="ch-freq">${fmt.hz(c.freq_hz)}</div>
+        <div class="ch-meta">${(c.demod||"").toUpperCase()} · ${(c.bw_hz/1e3).toFixed(1)} kHz · sql ${c.squelch_db} dB</div>
+        <div>RSSI <span class="ch-rssi">${fmt.rssi(c.last_rssi)}</span> dBFS · pk <span class="ch-rssi">${fmt.rssi(c.peak_rssi)}</span></div>
+        <div class="meter"><div class="meter-fill ${meterCls}" style="width:${meterPct(c.last_rssi)}%"></div></div>
+        <div class="ch-meta">PFB out #${c.output_index}</div>
+        ${lastTx}
+      </div>`;
+    }).join("");
+  } catch (e) {
+    document.getElementById("ch-grid").innerHTML =
+      '<div style="color:var(--hot);font-size:11px">channels error: '+e+'</div>';
+  }
+}
+
+async function loadMeta(){
+  try {
+    const data = await fetch(API+"/summary").then(r=>r.json());
+    const meta = document.getElementById("meta");
+    meta.textContent = data.profile_id
+      ? `${data.profile_id} · ${data.channel_count} ch @ ${data.center_mhz?.toFixed(3)} MHz · sr ${data.sample_rate_msps?.toFixed(1)} Msps · ${data.running?"running":"stopped"}`
+      : "no profile";
+    document.getElementById("p-id").textContent = data.profile_id || "—";
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("meta").textContent = "error: " + e;
+  }
+}
+
+// ---------- Events tab ----------
+async function loadEvents(){
+  const since = document.getElementById("since").value;
+  const channel = document.getElementById("ev-channel").value;
+  let url = API+`/events?since=${encodeURIComponent(since)}&limit=200`;
+  if (channel) url += "&channel="+encodeURIComponent(channel);
+  try {
+    const data = await fetch(url).then(r=>r.json());
+    const tbody = document.querySelector("#events-table tbody");
+    document.getElementById("ev-count").textContent =
+      `${data.events.length} event(s) since ${since}`;
+    if (!data.events.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--green-dim);font-size:11px">No events.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.events.map(e => {
+      const t = new Date(e.start_ts*1000).toLocaleString();
+      const audio = e.clip_path
+        ? `<audio controls preload="none" src="${API}/audio/${e.id}" style="height:24px;width:160px"></audio>`
+        : '<span style="color:var(--green-deep)">—</span>';
+      const tr = e.transcript
+        ? `<span style="color:var(--green)">"${(e.transcript||'').replace(/</g,"&lt;")}"</span>`
+        : '<span style="color:var(--green-deep)">—</span>';
+      return `<tr>
+        <td>${t}</td>
+        <td>${e.channel}</td>
+        <td>${fmt.hz(e.freq_hz)}</td>
+        <td>${fmt.dur(e.duration_s)}</td>
+        <td>${fmt.rssi(e.peak_rssi)}</td>
+        <td>${audio}</td>
+        <td>${tr}</td>
+      </tr>`;
+    }).join("");
+  } catch (e) {
+    document.querySelector("#events-table tbody").innerHTML =
+      `<tr><td colspan="7" style="color:var(--hot)">error: ${e}</td></tr>`;
+  }
+}
+document.getElementById("ev-refresh").addEventListener("click", loadEvents);
+document.getElementById("since").addEventListener("change", loadEvents);
+document.getElementById("ev-channel").addEventListener("change", loadEvents);
+
+async function populateChannelSelect(){
+  try {
+    const data = await fetch(API+"/channels").then(r=>r.json());
+    const sel = document.getElementById("ev-channel");
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">all</option>' +
+      (data.channels||[]).map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+    if (cur) sel.value = cur;
+  } catch(e){}
+}
+
+// ---------- Profile tab ----------
+async function loadProfileEditor(){
+  try {
+    const data = await fetch(API+"/profile").then(r=>r.json());
+    document.getElementById("toml-editor").value = data.toml || "# (no source TOML on disk)\n";
+  } catch(e) {
+    setMsg("profile-msg", "load failed: "+e, true);
+  }
+  await loadPresetList();
+}
+
+async function loadPresetList(){
+  try {
+    const data = await fetch(API+"/presets").then(r=>r.json());
+    const sel = document.getElementById("preset-select");
+    if (!data.presets.length) {
+      sel.innerHTML = '<option>(no presets bundled)</option>';
+      return;
+    }
+    sel.innerHTML = data.presets.map(p =>
+      `<option value="${p.name}" title="${(p.description||'').replace(/"/g,'')}">${p.name}</option>`
+    ).join("");
+  } catch(e){}
+}
+
+document.getElementById("apply-preset").addEventListener("click", async () => {
+  const name = document.getElementById("preset-select").value;
+  if (!name) return;
+  setMsg("profile-msg", "Applying preset "+name+"…", false);
+  try {
+    const r = await fetch(API+"/profile/preset", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({name})
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    setMsg("profile-msg", `Loaded preset ${name} → ${data.profile.id} (${data.profile.channels.length} channels)`, false);
+    await loadProfileEditor();
+    await loadMeta();
+  } catch(e) {
+    setMsg("profile-msg", "preset error: "+e, true);
+  }
+});
+
+document.getElementById("reload-toml").addEventListener("click", loadProfileEditor);
+
+document.getElementById("apply-toml").addEventListener("click", async () => {
+  const text = document.getElementById("toml-editor").value;
+  setMsg("profile-msg", "Validating + restarting…", false);
+  try {
+    const r = await fetch(API+"/profile", {
+      method:"POST", headers:{"content-type":"text/plain"}, body: text
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    setMsg("profile-msg", `Saved → ${data.saved_to}. Channels: ${data.profile.channels.length}.`, false);
+    await loadMeta();
+    await populateChannelSelect();
+  } catch(e) {
+    setMsg("profile-msg", "save error: "+e, true);
+  }
+});
+
+function setMsg(id, text, isErr){
+  const el = document.getElementById(id);
+  el.className = "msg " + (isErr?"err":"ok");
+  el.textContent = text;
+}
+
+// ---------- Health tab ----------
+async function loadHealth(){
+  try {
+    const data = await fetch(API+"/hackrf/health").then(r=>r.json());
+    const row = document.getElementById("health-row");
+    row.innerHTML = `
+      <div class="health-item"><div class="label">Device</div>
+        <div class="val ${data.device_present?'':'bad'}">${data.device_present?'present':'not detected'}</div></div>
+      <div class="health-item"><div class="label">Flowgraph</div>
+        <div class="val ${data.flowgraph_running?'':'bad'}">${data.flowgraph_running?'running':'stopped'}</div></div>
+      <div class="health-item"><div class="label">lsusb</div>
+        <div class="val">${data.lsusb_available?'available':'not installed'}</div></div>
+      <div class="health-item"><div class="label">Audio rate</div>
+        <div class="val">${data.meta?.audio_rate ?? '—'} Hz</div></div>
+      <div class="health-item"><div class="label">Channels wired</div>
+        <div class="val">${data.meta?.channels_wired ?? '—'}</div></div>
+    `;
+    document.getElementById("hk-device").textContent = data.device_info || "(hackrf_info not available)";
+    document.getElementById("hk-usb").textContent    = data.usb_topology || "(lsusb -t not available)";
+    document.getElementById("hk-meta").textContent   = JSON.stringify(data.meta || {}, null, 2);
+  } catch(e) {
+    document.getElementById("health-row").innerHTML =
+      '<div class="health-item"><div class="val bad">error: '+e+'</div></div>';
+  }
+}
+
+// ---------- bootstrap + polling ----------
+loadMeta();
+loadChannels();
+populateChannelSelect();
+setInterval(loadMeta, 4000);
+setInterval(loadChannels, 1500);
+</script>
+</body>
+</html>

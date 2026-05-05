@@ -1,0 +1,66 @@
+# ScanPi LITE profile — Pi 5 / Pi 4 / ARM SBC.
+#
+# Conservative defaults. CPU-aware. Heavy features behind explicit opt-in.
+# Edit this file or copy to ~/scanpi/profile.toml and customize.
+#
+# To enable an experimental feature: set the flag to true. Don't be surprised
+# if your Pi's load average goes to the moon — the recommended profile for
+# all-features-everywhere is `full` (Ubuntu x86_64).
+
+[profile]
+name = "lite"
+target = "pi5"
+description = "Pi 5 / ARM SBC. Single-source transcription. Lean and stable."
+
+[transcription]
+enabled = true
+mode = "single-source"      # one whisper stream at a time
+model = "tiny.en"           # ~75 MB. Don't go larger on lite.
+concurrent_streams = 1
+active_target = "op25"      # which source receives real-time transcription
+                            # options: "gmrs", "op25", "hackrf:<channel>", "all", "none"
+
+[search]
+fts5 = true                 # always-on, near zero CPU
+semantic = false            # OPT-IN — bge-small-en is fine on Pi 5 but adds load
+embedding_model = "bge-small-en-v1.5"
+embed_backfill_max = 5000   # how many existing transcripts to embed on first boot
+
+[alerts]
+mqtt_enabled = true
+mqtt_url = "mqtt://localhost:1883"
+watchlist_path = "~/scanpi/watchlist.yaml"
+backfill_hours = 24
+
+[geo]
+external_geocoder = true    # Nominatim with cache. ~1 req/sec rate-limited.
+viewbox = [-72.50, 41.18, -71.85, 41.50]   # SE Connecticut
+default_center = [41.3501, -72.0787]       # Groton CT
+pin_ttl_minutes = 5
+local_geocoder = false      # OPT-IN — needs Photon/Pelias install
+
+[recording]
+audio_archive = "squelched-flac"   # rdio-scanner pattern; tiny on disk
+iq_archive = false                 # OPT-IN. Don't enable unless you have a USB SSD.
+iq_ring_seconds = 0
+storage_max_gb = 4.0
+
+[hackrf]
+enabled = true              # tool registers if hardware present
+default_sample_rate = 8_000_000   # USB 2.0 ceiling on Pi 5
+default_num_chans = 32
+
+[experimental]
+trunk_recorder = false              # OPT-IN — extra ~1 core
+cross_channel_correlation = false   # OPT-IN — speaker embeddings
+speaker_diarization = false
+auto_freq_discovery = false         # OPT-IN — wideband survey + RR lookup
+anomaly_detection = false           # OPT-IN — autoencoder on FFTs
+
+[tailscale]
+serve_https = true          # `tailscale serve --bg --https=443 :8080`
+funnel = false              # OPT-IN — public exposure. Wire up auth first.
+
+[web]
+host = "0.0.0.0"
+port = 8080

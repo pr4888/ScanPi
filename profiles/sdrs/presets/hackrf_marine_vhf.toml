@@ -1,0 +1,209 @@
+# ScanPi SDR profile — HackRF One :: Marine VHF (156-162 MHz)
+#
+# FCC / ITU-R M.493 / M.1371 allocation context (US):
+#   156-162 MHz  marine VHF — 25 kHz channels, NFM, max deviation 5 kHz
+#   156.525 MHz  Channel 70 — DSC (digital selective calling, no voice)
+#   156.800 MHz  Channel 16 — international distress / hail
+#   157.100 MHz  Channel 22A — USCG Liaison (working channel after 16)
+#   162.400-162.550 MHz — NOAA weather radio (WX1-WX7) sub-channels
+#
+# Span: 156.05 MHz (Ch 60 / port ops) to 162.55 MHz (NOAA WX7) ~= 6.5 MHz.
+# Center 159 MHz, 8 Msps -> [155, 163] MHz window covers all of it cleanly.
+#
+# Notes:
+#   - All marine channels are NFM with 750 us de-emphasis per ITU-R M.489-2
+#     (different from US land mobile NFM 75 us). Set deemph_us = 750.
+#   - DSC ch 70 carries 1200 baud GMSK data. NFM demod will produce the GMSK
+#     sound; pipe the WAV to a DSC decoder offline. Tagged demod=nfm here so
+#     activity still triggers a recording.
+
+[sdr]
+id          = "hackrf_marine_vhf"
+driver      = "hackrf"
+serial      = ""
+center_hz   = 159_000_000
+sample_rate = 8_000_000
+gain        = "lna=24,vga=20,amp=0"
+front_end   = "VHF marine 156-162 MHz BPF / SAW"
+
+[channelizer]
+type            = "pfb"
+num_chans       = 32
+attenuation_db  = 80.0
+taps_window     = "blackman-harris"
+transition_frac = 0.20
+
+# ---- Distress / hail / safety ----
+[[channels]]
+name       = "MAR-16"
+freq_hz    = 156_800_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "International distress + hailing (priority)"
+
+[[channels]]
+name       = "MAR-22A"
+freq_hz    = 157_100_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "USCG Liaison — working channel after 16"
+
+[[channels]]
+name       = "MAR-DSC-70"
+freq_hz    = 156_525_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -25.0
+deemph_us  = 750.0
+notes      = "Digital Selective Calling (1200 baud GMSK; no voice)"
+
+# ---- Common voice channels ----
+[[channels]]
+name       = "MAR-06"
+freq_hz    = 156_300_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Inter-ship safety"
+
+[[channels]]
+name       = "MAR-09"
+freq_hz    = 156_450_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Boater calling channel"
+
+[[channels]]
+name       = "MAR-13"
+freq_hz    = 156_650_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Bridge-to-bridge navigation safety"
+
+[[channels]]
+name       = "MAR-67"
+freq_hz    = 156_375_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Commercial / inter-ship (US)"
+
+[[channels]]
+name       = "MAR-68"
+freq_hz    = 156_425_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Non-commercial recreational"
+
+[[channels]]
+name       = "MAR-71"
+freq_hz    = 156_575_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Non-commercial / port operations"
+
+[[channels]]
+name       = "MAR-72"
+freq_hz    = 156_625_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -28.0
+deemph_us  = 750.0
+notes      = "Non-commercial inter-ship"
+
+# ---- NOAA Weather Radio (broadcast, no PTT) ----
+[[channels]]
+name       = "NOAA-WX1"
+freq_hz    = 162_550_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX1 (continuous broadcast — squelch-open carrier)"
+
+[[channels]]
+name       = "NOAA-WX2"
+freq_hz    = 162_400_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX2"
+
+[[channels]]
+name       = "NOAA-WX3"
+freq_hz    = 162_475_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX3 (NLD/Groton primary)"
+
+[[channels]]
+name       = "NOAA-WX4"
+freq_hz    = 162_425_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX4"
+
+[[channels]]
+name       = "NOAA-WX5"
+freq_hz    = 162_450_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX5"
+
+[[channels]]
+name       = "NOAA-WX6"
+freq_hz    = 162_500_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX6"
+
+[[channels]]
+name       = "NOAA-WX7"
+freq_hz    = 162_525_000
+demod      = "nfm"
+bw_hz      = 16_000
+squelch_db = -22.0
+deemph_us  = 75.0
+notes      = "NOAA WX7"
+
+# ---- AIS (informational only — keep dwell low; AIS-catcher does the real decode) ----
+[[channels]]
+name       = "AIS-A"
+freq_hz    = 161_975_000
+demod      = "nfm"
+bw_hz      = 25_000
+squelch_db = -30.0
+deemph_us  = 75.0
+notes      = "AIS channel A (87B). Use AIS-catcher on a dedicated RTL-SDR for actual decoding."
+
+[[channels]]
+name       = "AIS-B"
+freq_hz    = 162_025_000
+demod      = "nfm"
+bw_hz      = 25_000
+squelch_db = -30.0
+deemph_us  = 75.0
+notes      = "AIS channel B (88B)."

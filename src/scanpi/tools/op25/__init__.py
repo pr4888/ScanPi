@@ -200,13 +200,17 @@ class OP25Tool(Tool):
             return
         self._db.close_call(call_id, end_ts, clip_path=clip_path)
         if clip_path and self._transcriber is not None:
-            self._db.set_transcript(call_id, None, "pending")
-            # Pull tgid for context in log
-            self._transcriber.submit(TranscribeJob(
-                event_id=call_id,
-                clip_path=clip_path,
-                channel=0,  # not used for P25
-            ))
+            from ...profile import active_transcription_target
+            target = active_transcription_target()
+            if target in ("all", "op25"):
+                self._db.set_transcript(call_id, None, "pending")
+                self._transcriber.submit(TranscribeJob(
+                    event_id=call_id,
+                    clip_path=clip_path,
+                    channel=0,
+                ))
+            else:
+                self._db.set_transcript(call_id, None, "skipped")
 
     def _on_transcribe_result(self, call_id: int, text: str | None, status: str):
         if self._db is None:

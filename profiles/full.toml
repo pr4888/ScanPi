@@ -1,0 +1,67 @@
+# ScanPi FULL profile — Ubuntu x86_64.
+#
+# No-compromise feature set. Assumes 8+ cores, 16+ GB RAM, USB 3, optional GPU.
+# Designed to run extraordinarily well above all else.
+#
+# This is the profile that gets you everything: multi-stream concurrent
+# transcription, semantic search, continuous IQ ring buffer, trunk-recorder
+# alongside OP25, cross-channel speaker correlation. The lot.
+
+[profile]
+name = "full"
+target = "ubuntu-x86_64"
+description = "Ubuntu / NUC / server class. Everything on. No compromises."
+
+[transcription]
+enabled = true
+mode = "multi-stream"
+model = "small.en"          # ~480 MB. Bigger if GPU: "medium.en" (~1.5 GB).
+concurrent_streams = 4
+active_target = "all"       # all sources transcribe in parallel
+gpu = "auto"                # CUDA if visible; falls back to CPU
+
+[search]
+fts5 = true
+semantic = true             # ON by default
+embedding_model = "bge-small-en-v1.5"
+embed_backfill_max = 50000
+
+[alerts]
+mqtt_enabled = true
+mqtt_url = "mqtt://localhost:1883"
+watchlist_path = "~/scanpi/watchlist.yaml"
+backfill_hours = 168        # 1 week of history materialized into alerts.db
+
+[geo]
+external_geocoder = true
+viewbox = [-72.50, 41.18, -71.85, 41.50]   # adjust to your area
+default_center = [41.3501, -72.0787]
+pin_ttl_minutes = 5
+local_geocoder = false      # set true and configure local Photon/Pelias if you have it
+
+[recording]
+audio_archive = "squelched-flac"
+iq_archive = true                  # continuous IQ ring buffer + trigger snapshots
+iq_ring_seconds = 60
+iq_snapshot_compress = "flac"      # SigMF-compatible
+storage_max_gb = 200.0
+
+[hackrf]
+enabled = true
+default_sample_rate = 8_000_000     # USB 2 ceiling — bump to 10-20 if you trust your USB
+default_num_chans = 32
+
+[experimental]
+trunk_recorder = true                # ON: forensic record-everything alongside OP25
+cross_channel_correlation = true     # ECAPA-TDNN speaker embeddings + clustering
+speaker_diarization = false          # set true if you've installed pyannote
+auto_freq_discovery = true           # wideband survey + RR cross-reference
+anomaly_detection = false            # set true once you've trained a baseline autoencoder
+
+[tailscale]
+serve_https = true
+funnel = false                       # OPT-IN. Don't expose without auth.
+
+[web]
+host = "0.0.0.0"
+port = 8080

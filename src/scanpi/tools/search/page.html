@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ScanPi :: Search</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+.search-bar {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  padding:10px; background:var(--bg-panel); border:1px solid var(--border);
+  border-radius:3px; margin-bottom:14px;
+}
+.search-bar input[type=search] {
+  flex:1 1 280px; min-width:200px; background:var(--bg);
+  color:var(--green); border:1px solid var(--green-deep); border-radius:2px;
+  padding:8px 10px; font:inherit;
+}
+.search-bar input[type=search]:focus { outline:none; border-color:var(--green); }
+.search-bar select, .search-bar button {
+  background:var(--bg-panel); color:var(--green-dim);
+  border:1px solid var(--border); border-radius:2px;
+  padding:7px 10px; font:inherit; cursor:pointer;
+}
+.search-bar button {
+  background:var(--green-deep); color:var(--green); border-color:var(--green-deep);
+}
+.search-bar button:hover { background:var(--green); color:var(--bg); }
+.search-bar .mode-toggle { display:flex; gap:0; }
+.search-bar .mode-toggle button { border-radius:0; border-right:0; }
+.search-bar .mode-toggle button:first-child { border-top-left-radius:2px; border-bottom-left-radius:2px; }
+.search-bar .mode-toggle button:last-child  { border-top-right-radius:2px; border-bottom-right-radius:2px; border-right:1px solid var(--border); }
+.search-bar .mode-toggle button.active {
+  background:var(--green-glow); color:#061; border-color:var(--green-glow);
+  text-shadow:none;
+}
+
+.banner {
+  background:rgba(255,179,71,0.07); border:1px solid var(--amber-deep);
+  color:var(--amber); padding:8px 12px; border-radius:2px;
+  font-size:11px; margin-bottom:12px;
+}
+.banner.ok { background:rgba(111,255,157,0.07); border-color:var(--green-deep); color:var(--green); }
+.banner.dim { color:var(--green-dim); border-color:var(--border); background:var(--bg-panel); }
+
+.result {
+  background:var(--bg-panel); border:1px solid var(--border);
+  border-left:3px solid var(--green-deep); border-radius:2px;
+  padding:10px 12px; margin-bottom:8px;
+}
+.result.match-semantic { border-left-color:#4a9eff; }
+.result.match-hybrid   { border-left-color:#ffd700; }
+.result-head {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  font-size:11px; color:var(--green-dim); margin-bottom:6px;
+}
+.result-head .source {
+  text-transform:uppercase; letter-spacing:1px; padding:1px 6px;
+  border-radius:2px; font-size:10px;
+}
+.result-head .source.gmrs { background:rgba(74,158,255,0.15); color:#7ec8e3; }
+.result-head .source.op25 { background:rgba(255,179,71,0.15); color:var(--amber); }
+.result-head .label { color:var(--green); }
+.result-head .ts { color:var(--amber); }
+.result-head .score { margin-left:auto; color:var(--green-dim); font-size:10px; }
+.result-head .match-tag {
+  font-size:9px; padding:1px 5px; border:1px solid var(--green-deep);
+  border-radius:2px; color:var(--green-dim);
+}
+.result-head .match-tag.semantic { color:#7ec8e3; border-color:#4a9eff44; }
+.result-head .match-tag.hybrid   { color:#ffd700; border-color:#ffd70044; }
+
+.result-snippet {
+  color:var(--green); font-size:13px; line-height:1.5;
+  word-break:break-word;
+}
+.result-snippet mark {
+  background:var(--amber); color:var(--bg); padding:0 2px;
+  border-radius:1px; text-shadow:none;
+}
+.result-actions {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  margin-top:8px; font-size:11px;
+}
+.result-actions audio { height:28px; flex:1 1 240px; max-width:380px; }
+.result-actions .similar-btn {
+  background:var(--bg); color:var(--green-dim); border:1px solid var(--green-deep);
+  padding:3px 8px; border-radius:2px; font-size:10px; cursor:pointer;
+}
+.result-actions .similar-btn:hover { background:var(--green-deep); color:var(--green); }
+.result-actions .open-btn {
+  color:var(--amber); text-decoration:none; font-size:10px;
+  border:1px solid var(--amber-deep); padding:3px 8px; border-radius:2px;
+}
+.result-actions .open-btn:hover { background:var(--amber-deep); color:var(--amber); }
+
+#status-bar { color:var(--green-dim); font-size:11px; margin-bottom:10px; }
+#status-bar strong { color:var(--amber); }
+.empty { color:var(--green-dim); padding:20px; text-align:center; font-style:italic; }
+
+@media (max-width: 600px) {
+  .search-bar { flex-direction:column; align-items:stretch; }
+  .search-bar input[type=search] { min-width:0; }
+  .search-bar select, .search-bar button { width:100%; }
+  .result-actions audio { max-width:none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; Search</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+</header>
+<main>
+  <div class="search-bar" id="searchbar">
+    <input id="q" type="search" placeholder="Search transcripts… (e.g. fire, brush, route 12)" autocomplete="off" autofocus>
+    <div class="mode-toggle" id="mode-toggle" role="tablist" aria-label="search mode">
+      <button data-mode="lexical" class="active" title="Exact word match (FTS5)">lex</button>
+      <button data-mode="semantic" title="Meaning-based (embeddings)">sem</button>
+      <button data-mode="hybrid"   title="Combined ranking">hyb</button>
+    </div>
+    <select id="since" title="Time range">
+      <option value="">all time</option>
+      <option value="1h">last 1h</option>
+      <option value="6h">last 6h</option>
+      <option value="24h" selected>last 24h</option>
+      <option value="7d">last 7d</option>
+      <option value="30d">last 30d</option>
+    </select>
+    <select id="source" title="Source filter">
+      <option value="all">all sources</option>
+      <option value="gmrs">GMRS only</option>
+      <option value="op25">P25 only</option>
+    </select>
+    <button id="go" type="button">Search</button>
+  </div>
+  <div id="status-bar"></div>
+  <div id="banner-area"></div>
+  <div id="results"></div>
+</main>
+
+<script>
+const fmt = {
+  ts:  ts => ts ? new Date(ts*1000).toLocaleString() : "—",
+  ago: ts => {
+    if(!ts) return "never";
+    const a = Date.now()/1000 - ts;
+    if (a < 60)   return Math.floor(a)+"s ago";
+    if (a < 3600) return Math.floor(a/60)+"m ago";
+    if (a < 86400) return Math.floor(a/3600)+"h ago";
+    return Math.floor(a/86400)+"d ago";
+  },
+  dur: s => s == null ? "" : (s < 60 ? s.toFixed(1)+"s" : (s/60).toFixed(1)+"m"),
+};
+
+let currentMode = "lexical";
+
+document.querySelectorAll("#mode-toggle button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#mode-toggle button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    currentMode = b.dataset.mode;
+    if (document.getElementById("q").value.trim()) doSearch();
+  });
+});
+
+document.getElementById("go").addEventListener("click", doSearch);
+document.getElementById("q").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+document.getElementById("since").addEventListener("change", () => {
+  if (document.getElementById("q").value.trim()) doSearch();
+});
+document.getElementById("source").addEventListener("change", () => {
+  if (document.getElementById("q").value.trim()) doSearch();
+});
+
+async function refreshHealth() {
+  try {
+    const r = await fetch("api/search/health");
+    const h = await r.json();
+    const m = document.getElementById("meta");
+    const sem = h.semantic_status || "?";
+    const counts = h.counts || {};
+    m.innerHTML =
+      "<strong>" + (counts.fts || 0) + "</strong> indexed · " +
+      "<strong>" + (counts.gmrs || 0) + "</strong> gmrs · " +
+      "<strong>" + (counts.op25 || 0) + "</strong> op25 · " +
+      "<strong>" + (counts.embeddings || 0) + "</strong> embedded · " +
+      "semantic: <strong>" + sem + "</strong>";
+  } catch (e) {
+    document.getElementById("meta").textContent = "health check failed";
+  }
+}
+
+async function doSearch() {
+  const q = document.getElementById("q").value.trim();
+  const since  = document.getElementById("since").value;
+  const source = document.getElementById("source").value;
+  const banner = document.getElementById("banner-area");
+  const results = document.getElementById("results");
+  const sb = document.getElementById("status-bar");
+  banner.innerHTML = "";
+  if (!q) {
+    results.innerHTML = '<div class="empty">Type a query and hit Enter.</div>';
+    sb.textContent = "";
+    return;
+  }
+  sb.textContent = "Searching…";
+  results.innerHTML = "";
+  const params = new URLSearchParams({ q, mode: currentMode, since, source, limit: "50" });
+  let data;
+  try {
+    const r = await fetch("api/search?" + params);
+    data = await r.json();
+  } catch (e) {
+    sb.innerHTML = "<span style='color:var(--hot)'>Search failed: " + e + "</span>";
+    return;
+  }
+  if (data.warnings && data.warnings.length) {
+    banner.innerHTML = data.warnings.map(w =>
+      '<div class="banner">⚠ ' + escapeHtml(w) + '</div>'
+    ).join("");
+  }
+  const rows = data.results || [];
+  sb.innerHTML = "<strong>" + rows.length + "</strong> result" + (rows.length === 1 ? "" : "s") +
+                 " · mode=<strong>" + escapeHtml(data.mode) + "</strong>" +
+                 (data.since ? " · " + escapeHtml(data.since) : "");
+  if (!rows.length) {
+    results.innerHTML = '<div class="empty">No results.</div>';
+    return;
+  }
+  results.innerHTML = rows.map(renderResult).join("");
+}
+
+function renderResult(row) {
+  const matchClass = row.match_type === "hybrid" ? "match-hybrid"
+                   : row.match_type === "semantic" ? "match-semantic"
+                   : "match-lexical";
+  // Escape the snippet, then re-allow our <mark> tags inserted by FTS5 snippet()
+  let snippet = escapeHtml(row.snippet || row.transcript || "")
+    .replace(/&lt;mark&gt;/g, "<mark>")
+    .replace(/&lt;\/mark&gt;/g, "</mark>");
+  const audio = row.audio_url
+    ? `<audio controls preload="none" src="${escapeAttr(row.audio_url)}"></audio>`
+    : "";
+  return `<div class="result ${matchClass}">
+    <div class="result-head">
+      <span class="source ${row.source}">${row.source}</span>
+      <span class="label">${escapeHtml(row.label || row.channel_or_tg || "")}</span>
+      <span class="ts" title="${escapeAttr(fmt.ts(row.ts))}">${escapeHtml(fmt.ago(row.ts))}</span>
+      ${row.duration_s != null ? `<span>${fmt.dur(row.duration_s)}</span>` : ""}
+      <span class="match-tag ${row.match_type}">${escapeHtml(row.match_type)}</span>
+      <span class="score" title="ranking score">${(row.score || 0).toFixed(3)}</span>
+    </div>
+    <div class="result-snippet">${snippet}</div>
+    <div class="result-actions">
+      ${audio}
+      <button class="similar-btn" onclick="findSimilar('${row.source}', ${row.source_id})">find similar</button>
+      <a class="open-btn" href="/tools/${row.source}/" title="open in source tool">open ${row.source}</a>
+    </div>
+  </div>`;
+}
+
+async function findSimilar(source, srcId) {
+  const sb = document.getElementById("status-bar");
+  const banner = document.getElementById("banner-area");
+  const results = document.getElementById("results");
+  banner.innerHTML = "";
+  sb.textContent = "Finding similar…";
+  try {
+    const r = await fetch(`api/search/similar/${source}/${srcId}?limit=20`);
+    const data = await r.json();
+    if (data.warning) {
+      banner.innerHTML = '<div class="banner">' + escapeHtml(data.warning) + '</div>';
+    }
+    const rows = data.results || [];
+    sb.innerHTML = "<strong>" + rows.length + "</strong> similar to " +
+                   escapeHtml(source) + "/" + srcId;
+    let header = "";
+    if (data.reference) {
+      header = `<div class="banner ok">Reference: <strong>${escapeHtml(data.reference.label || data.reference.channel_or_tg || "")}</strong> ` +
+               `· ${escapeHtml(fmt.ago(data.reference.ts))} · ${escapeHtml((data.reference.transcript||"").slice(0,80))}</div>`;
+    }
+    results.innerHTML = header + (rows.length ? rows.map(renderResult).join("") :
+                                    '<div class="empty">No similar calls found.</div>');
+  } catch (e) {
+    sb.innerHTML = "<span style='color:var(--hot)'>Similar lookup failed</span>";
+  }
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escapeAttr(s) {
+  if (s == null) return "";
+  return String(s).replace(/"/g, "&quot;").replace(/&/g, "&amp;");
+}
+
+refreshHealth();
+setInterval(refreshHealth, 15000);
+</script>
+</body>
+</html>

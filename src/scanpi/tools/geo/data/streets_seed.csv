@@ -1,0 +1,50 @@
+name,town,lat,lon,kind
+Route 1,Groton,41.3501,-72.0628,route
+Route 1,New London,41.3556,-72.1056,route
+Route 1,Stonington,41.3589,-71.9120,route
+Route 1,Old Saybrook,41.2945,-72.3759,route
+Route 12,Groton,41.3756,-72.0571,route
+Route 12,New London,41.3656,-72.0995,route
+Route 12,Norwich,41.5243,-72.0759,route
+Route 184,Groton,41.3812,-72.0379,route
+Route 117,Groton,41.3658,-72.0426,route
+Route 184,Ledyard,41.4395,-71.9904,route
+Route 27,Mystic,41.3622,-71.9665,route
+Route 215,Noank,41.3251,-71.9870,route
+Route 32,Waterford,41.3420,-72.1490,route
+Route 32,Norwich,41.5243,-72.0759,route
+Route 156,Niantic,41.3251,-72.1948,route
+Route 161,East Lyme,41.3623,-72.2245,route
+Route 2,Norwich,41.5440,-72.0640,route
+Route 2A,Ledyard,41.4225,-72.0290,route
+Route 78,Westerly RI,41.3776,-71.8395,route
+I-95,Groton,41.3501,-72.0787,route
+I-95,Stonington,41.3357,-71.9073,route
+I-95,New London,41.3556,-72.0995,route
+I-395,Norwich,41.5243,-72.0759,route
+I-395,Montville,41.4640,-72.1487,route
+Bridge Street,Mystic,41.3543,-71.9659,street
+Main Street,Mystic,41.3554,-71.9657,street
+Main Street,Niantic,41.3251,-72.1948,street
+Main Street,Old Saybrook,41.2945,-72.3759,street
+Main Street,Norwich,41.5243,-72.0905,street
+Bank Street,New London,41.3556,-72.0961,street
+State Street,New London,41.3551,-72.0988,street
+Broad Street,New London,41.3534,-72.0983,street
+Pequot Avenue,New London,41.3346,-72.0921,street
+Ocean Avenue,New London,41.3434,-72.0972,street
+Eastern Point Road,Groton,41.3232,-72.0670,street
+Long Hill Road,Groton,41.3756,-72.0571,street
+Poquonnock Road,Groton,41.3489,-72.0226,street
+Fort Hill Road,Groton,41.3526,-72.0531,street
+Thames Street,Groton,41.3490,-72.0826,street
+Pleasant Valley Road,Groton,41.3658,-72.0226,street
+Gold Star Highway,Groton,41.3756,-72.0571,street
+North Road,Groton,41.3812,-72.0379,street
+Boston Post Road,Old Saybrook,41.2945,-72.3759,street
+West Main Street,Mystic,41.3543,-71.9690,street
+East Main Street,Mystic,41.3543,-71.9620,street
+Williams Avenue,Mystic,41.3550,-71.9665,street
+High Street,Mystic,41.3585,-71.9670,street
+Cove Road,Stonington,41.3357,-71.9073,street
+Water Street,Stonington,41.3327,-71.9073,street

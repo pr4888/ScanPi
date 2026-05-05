@@ -1,0 +1,246 @@
+# ScanPi SDR profile — HackRF One :: UHF business pool overview (460-468 MHz)
+#
+# FCC allocation context (Part 90 industrial / business pool):
+#   460-470 MHz   UHF business pool (mobile + repeater pairs, 5 MHz offset)
+#   460.000-460.650   Police (some legacy assignments still active)
+#   460.650-462.500   Business / industrial
+#   462.500-462.7375  GMRS — covered by hackrf_gmrs_frs.toml, NOT here
+#   463.000-466.475   Business / industrial
+#   467.500-467.7125  FRS — covered by hackrf_gmrs_frs.toml, NOT here
+#   467.750-468.5375  Itinerant business
+#   469.500-470.000   Business
+#
+# Span: 460.0 -> 468.0 = 8 MHz exactly. Center at 464 MHz, 8 Msps -> [460, 468]
+# fits the lower 8 MHz of the band cleanly. The upper sliver 468-470 MHz is
+# OUTSIDE this profile's window — to cover it, retune to center 466 MHz.
+#
+# These are *survey* channels: the UHF business pool is shared, license-by-coordination,
+# and tends to vary by region. Keep these as a wide net to discover what's active in
+# your area, then promote interesting hits to a dedicated profile.
+
+[sdr]
+id          = "hackrf_uhf_business"
+driver      = "hackrf"
+serial      = ""
+center_hz   = 464_000_000
+sample_rate = 8_000_000
+gain        = "lna=24,vga=20,amp=0"
+front_end   = "UHF 450-470 MHz BPF / SAW"
+
+[channelizer]
+type            = "pfb"
+num_chans       = 32
+attenuation_db  = 80.0
+taps_window     = "blackman-harris"
+transition_frac = 0.20
+
+# ---- Common itinerant business / industrial (462-463 MHz business band) ----
+[[channels]]
+name       = "ITIN-462.7625"
+freq_hz    = 462_762_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Color Dot Red)"
+
+[[channels]]
+name       = "ITIN-462.8125"
+freq_hz    = 462_812_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Color Dot Purple)"
+
+[[channels]]
+name       = "ITIN-462.8625"
+freq_hz    = 462_862_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Color Dot Yellow)"
+
+[[channels]]
+name       = "ITIN-462.9125"
+freq_hz    = 462_912_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Color Dot Blue)"
+
+[[channels]]
+name       = "ITIN-464.500"
+freq_hz    = 464_500_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Brown Dot)"
+
+[[channels]]
+name       = "ITIN-464.550"
+freq_hz    = 464_550_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business (Yellow Dot)"
+
+[[channels]]
+name       = "ITIN-466.025"
+freq_hz    = 466_025_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business — voice / paging"
+
+[[channels]]
+name       = "ITIN-467.7625"
+freq_hz    = 467_762_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business — paired with 462.7625"
+
+[[channels]]
+name       = "ITIN-467.8125"
+freq_hz    = 467_812_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business — paired with 462.8125"
+
+[[channels]]
+name       = "ITIN-467.8625"
+freq_hz    = 467_862_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business — paired with 462.8625"
+
+[[channels]]
+name       = "ITIN-467.9125"
+freq_hz    = 467_912_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant business — paired with 462.9125"
+
+# ---- Lower-band business / utility (460-461) ----
+[[channels]]
+name       = "BUS-460.6125"
+freq_hz    = 460_612_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Business / utility"
+
+[[channels]]
+name       = "BUS-460.7375"
+freq_hz    = 460_737_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Business / utility"
+
+[[channels]]
+name       = "BUS-461.0375"
+freq_hz    = 461_037_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Business / utility"
+
+[[channels]]
+name       = "BUS-461.1125"
+freq_hz    = 461_112_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Business / utility"
+
+# ---- 463-464 MHz business / hospital / industrial ----
+[[channels]]
+name       = "BUS-463.4125"
+freq_hz    = 463_412_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Hospital / paging (Med-9 region)"
+
+[[channels]]
+name       = "BUS-463.7000"
+freq_hz    = 463_700_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+[[channels]]
+name       = "BUS-464.025"
+freq_hz    = 464_025_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+[[channels]]
+name       = "BUS-464.550"
+freq_hz    = 464_550_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+# ---- Upper-band business (465-468) ----
+[[channels]]
+name       = "BUS-465.0000"
+freq_hz    = 465_000_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+[[channels]]
+name       = "BUS-465.350"
+freq_hz    = 465_350_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+[[channels]]
+name       = "BUS-466.025"
+freq_hz    = 466_025_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Industrial / business"
+
+[[channels]]
+name       = "BUS-467.500"
+freq_hz    = 467_500_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "Itinerant / paging"

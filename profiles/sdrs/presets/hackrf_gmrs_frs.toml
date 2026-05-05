@@ -1,0 +1,251 @@
+# ScanPi SDR profile — HackRF One :: GMRS + FRS (full 22-channel coverage)
+#
+# FCC allocation context:
+#   GMRS (Part 95E): 462.5500-462.7250 MHz (channels 15-22 = main + repeater outputs)
+#                    467.5500-467.7250 MHz (repeater inputs, paired with 15-22)
+#                    462.5625-462.7125 MHz (channels 1-7, FRS-shared, 5W)
+#   FRS  (Part 95B): 462.5625-462.7125 MHz (channels 1-7,  shared with GMRS, 2W FRS)
+#                    467.5625-467.7125 MHz (channels 8-14, FRS-only,         0.5W)
+#
+# This profile covers the entire 22-channel FRS+GMRS plan plus the GMRS repeater
+# inputs (467.55-467.7375), in one HackRF tune. Wide-coverage scan-the-whole-block
+# preset; subset the [[channels]] list on a Pi 5 to fit your CPU budget.
+#
+# Span check: 462.5500 -> 467.7375 = 5.1875 MHz center 465.14 MHz; we sit center
+# at 465 MHz with 8 Msps -> [461, 469] MHz window comfortably wraps both blocks.
+
+[sdr]
+id          = "hackrf_gmrs_frs"
+driver      = "hackrf"
+serial      = ""
+center_hz   = 465_000_000
+sample_rate = 8_000_000
+gain        = "lna=24,vga=20,amp=0"
+front_end   = "UHF 400-500 MHz BPF / SAW"
+
+[channelizer]
+type            = "pfb"
+num_chans       = 32
+attenuation_db  = 80.0
+taps_window     = "blackman-harris"
+transition_frac = 0.20
+
+# ===== GMRS channels 15-22 (main, 50W) — 462.5500-462.7250, 25 kHz spacing =====
+[[channels]]
+name       = "GMRS-15"
+freq_hz    = 462_550_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 15 (50W max)"
+
+[[channels]]
+name       = "GMRS-16"
+freq_hz    = 462_575_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 16 (50W max)"
+
+[[channels]]
+name       = "GMRS-17"
+freq_hz    = 462_600_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 17 (50W max)"
+
+[[channels]]
+name       = "GMRS-18"
+freq_hz    = 462_625_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 18 (50W max)"
+
+[[channels]]
+name       = "GMRS-19"
+freq_hz    = 462_650_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 19 (50W max)"
+
+[[channels]]
+name       = "GMRS-20"
+freq_hz    = 462_675_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 20 (50W max)"
+
+[[channels]]
+name       = "GMRS-21"
+freq_hz    = 462_700_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 21 (50W max)"
+
+[[channels]]
+name       = "GMRS-22"
+freq_hz    = 462_725_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS main 22 (50W max)"
+
+# ===== FRS/GMRS shared channels 1-7 — 462.5625-462.7125, 25 kHz spacing =====
+[[channels]]
+name       = "FRS-1"
+freq_hz    = 462_562_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 1 (FRS 2W / GMRS 5W)"
+
+[[channels]]
+name       = "FRS-2"
+freq_hz    = 462_587_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 2"
+
+[[channels]]
+name       = "FRS-3"
+freq_hz    = 462_612_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 3"
+
+[[channels]]
+name       = "FRS-4"
+freq_hz    = 462_637_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 4"
+
+[[channels]]
+name       = "FRS-5"
+freq_hz    = 462_662_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 5"
+
+[[channels]]
+name       = "FRS-6"
+freq_hz    = 462_687_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 6"
+
+[[channels]]
+name       = "FRS-7"
+freq_hz    = 462_712_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS/GMRS 7"
+
+# ===== FRS-only channels 8-14 — 467.5625-467.7125, 12.5 kHz spacing, 0.5W =====
+[[channels]]
+name       = "FRS-8"
+freq_hz    = 467_562_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 8 (0.5W max)"
+
+[[channels]]
+name       = "FRS-9"
+freq_hz    = 467_587_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 9 (0.5W max)"
+
+[[channels]]
+name       = "FRS-10"
+freq_hz    = 467_612_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 10 (0.5W max)"
+
+[[channels]]
+name       = "FRS-11"
+freq_hz    = 467_637_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 11 (0.5W max)"
+
+[[channels]]
+name       = "FRS-12"
+freq_hz    = 467_662_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 12 (0.5W max)"
+
+[[channels]]
+name       = "FRS-13"
+freq_hz    = 467_687_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 13 (0.5W max)"
+
+[[channels]]
+name       = "FRS-14"
+freq_hz    = 467_712_500
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "FRS-only 14 (0.5W max)"
+
+# ===== GMRS repeater inputs — 467.5500-467.7250, paired with 15-22 =====
+[[channels]]
+name       = "GMRS-RPT-IN-15"
+freq_hz    = 467_550_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS repeater input paired with channel 15"
+
+[[channels]]
+name       = "GMRS-RPT-IN-22"
+freq_hz    = 467_725_000
+demod      = "nfm"
+bw_hz      = 12_500
+squelch_db = -25.0
+deemph_us  = 75.0
+notes      = "GMRS repeater input paired with channel 22"

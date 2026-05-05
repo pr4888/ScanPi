@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ScanPi :: Geo Map</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<style>
+  /* GEO-specific tweaks layered onto theme.css */
+  #map {
+    height: calc(100vh - 130px);
+    min-height: 380px;
+    width: 100%;
+    background: #060a07;
+    border: 1px solid var(--border);
+  }
+  .geo-controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .geo-controls label { color: var(--green-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .geo-controls .pill {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--green);
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  .geo-controls .pill.active {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .geo-controls input[type="range"] { vertical-align: middle; }
+  .leaflet-popup-content-wrapper {
+    background: var(--bg-panel);
+    color: var(--green);
+    border: 1px solid var(--green-deep);
+    border-radius: 2px;
+    box-shadow: 0 0 12px rgba(0,255,102,0.15);
+  }
+  .leaflet-popup-tip { background: var(--bg-panel); }
+  .leaflet-popup-content {
+    margin: 8px 10px; font-size: 11px; line-height: 1.5;
+    font-family: ui-monospace, monospace;
+  }
+  .leaflet-popup-content .pop-label {
+    color: var(--amber); text-transform: uppercase; letter-spacing: 1px;
+    font-size: 10px; display: block; margin-bottom: 4px;
+  }
+  .leaflet-popup-content .pop-tx {
+    color: var(--green); font-style: italic;
+    border-left: 2px solid var(--green-deep); padding-left: 6px;
+    margin: 6px 0;
+  }
+  .leaflet-popup-content audio { width: 100%; margin-top: 4px; }
+  .leaflet-popup-content .pop-meta {
+    color: var(--green-dim); font-size: 10px;
+  }
+  .leaflet-control-attribution {
+    background: rgba(11,16,13,0.85) !important;
+    color: var(--green-dim) !important;
+    font-size: 10px !important;
+  }
+  .leaflet-control-attribution a {
+    color: var(--amber) !important;
+  }
+  .geo-stats {
+    color: var(--green-dim); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-left: auto;
+  }
+  .geo-stats strong { color: var(--amber); }
+  .pin-fade { transition: opacity 1.2s ease; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="live-dot"></span>ScanPi &nbsp;::&nbsp; Geo Map</h1>
+    <div style="margin-top:4px"><a href="/" style="font-size:11px">&lt;&lt; dashboard</a></div>
+    <div class="sub" id="meta">loading…</div>
+  </div>
+  <div class="sub" id="updated">—</div>
+</header>
+<main>
+  <div class="geo-controls">
+    <span class="pill active" data-mode="live" id="mode-live">Live (5 min)</span>
+    <span class="pill" data-mode="history" id="mode-hist">History (24h)</span>
+    <span style="margin-left:8px">
+      <label><input type="checkbox" id="hide-low"> hide low-conf</label>
+    </span>
+    <span id="hist-controls" style="display:none">
+      <label>Window:</label>
+      <select id="hist-window" class="pill" style="cursor:auto">
+        <option value="1h">1h</option>
+        <option value="6h">6h</option>
+        <option value="24h" selected>24h</option>
+        <option value="7d">7d</option>
+        <option value="30d">30d</option>
+      </select>
+      <label>Time:</label>
+      <input type="range" id="time-slider" min="0" max="100" value="100" style="width:200px">
+      <span id="time-label" style="color:var(--amber)">now</span>
+    </span>
+    <span class="geo-stats" id="stats">
+      <strong id="pin-count">0</strong> pins
+      &middot; geocoder <strong id="geo-status">?</strong>
+      &middot; cache <strong id="cache-count">?</strong>
+    </span>
+  </div>
+
+  <div id="map"></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script>
+// ---- map setup -------------------------------------------------------
+const GROTON = [41.3501, -72.0787];
+
+const map = L.map('map', {
+  zoomControl: true,
+  attributionControl: true,
+}).setView(GROTON, 11);
+
+// CartoDB Dark Matter tiles — fits the phosphor theme.
+L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    maxZoom: 19,
+    subdomains: 'abcd',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+  }
+).addTo(map);
+
+const liveLayer = L.layerGroup().addTo(map);
+const histLayer = L.layerGroup();   // not added by default
+
+// ---- state -----------------------------------------------------------
+let mode = 'live';
+let pollTimer = null;
+let pinsById = new Map();   // id -> {marker, ts, layer}
+const FADE_MS = 1500;
+
+// ---- helpers ---------------------------------------------------------
+function fmtAgo(ts) {
+  if (!ts) return 'never';
+  const a = Date.now()/1000 - ts;
+  if (a < 1) return 'now';
+  if (a < 60) return Math.floor(a) + 's ago';
+  if (a < 3600) return Math.floor(a/60) + 'm ago';
+  if (a < 86400) return Math.floor(a/3600) + 'h ago';
+  return Math.floor(a/86400) + 'd ago';
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toLocaleString();
+}
+
+function colorForKind(kind) {
+  switch (kind) {
+    case 'street': return '#6fff9d';
+    case 'town': return '#ffb347';
+    case 'route': return '#ff7a00';
+    case 'intersection': return '#ff5e5e';
+    case 'landmark': return '#c88fff';
+    default: return '#6fa8ff';
+  }
+}
+
+function pinIcon(kind, confidence) {
+  const c = colorForKind(kind);
+  const op = Math.max(0.4, Math.min(1.0, confidence || 0.5));
+  const size = 14;
+  const html = `<div style="
+    width:${size}px;height:${size}px;border-radius:50%;
+    background:${c};opacity:${op};
+    box-shadow:0 0 6px ${c},0 0 1px #000;
+    border:1px solid #061;
+  "></div>`;
+  return L.divIcon({
+    html: html, className: 'pin-fade',
+    iconSize: [size, size], iconAnchor: [size/2, size/2],
+  });
+}
+
+function buildPopup(p) {
+  const audio = p.audio_url
+    ? `<audio controls preload="none" src="${p.audio_url}"></audio>`
+    : '';
+  const tx = p.transcript_excerpt
+    ? `<div class="pop-tx">${escapeHtml(p.transcript_excerpt)}</div>`
+    : '';
+  const conf = (p.confidence != null) ? p.confidence.toFixed(2) : '?';
+  return `
+    <span class="pop-label">${escapeHtml(p.kind || 'pin')} :: ${escapeHtml(p.label || '')}</span>
+    <div class="pop-meta">${escapeHtml(p.source || '')}/${escapeHtml(p.channel_or_tg || '')} · ${fmtTime(p.ts)} · conf ${conf}</div>
+    ${tx}
+    ${audio}
+  `;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ---- live mode -------------------------------------------------------
+async function refreshLive() {
+  const hideLow = document.getElementById('hide-low').checked;
+  const minConf = hideLow ? 0.4 : 0.0;
+  let resp;
+  try {
+    resp = await fetch(`api/pins?since=5m&min_confidence=${minConf}`);
+  } catch (e) {
+    return;
+  }
+  const data = await resp.json();
+  const features = data.features || [];
+  document.getElementById('pin-count').textContent = features.length;
+  document.getElementById('updated').textContent = 'updated ' + fmtAgo(data.now);
+
+  const seen = new Set();
+  for (const f of features) {
+    const id = f.id;
+    seen.add(id);
+    if (!pinsById.has(id)) {
+      const [lon, lat] = f.geometry.coordinates;
+      const m = L.marker([lat, lon], {
+        icon: pinIcon(f.properties.kind, f.properties.confidence),
+      });
+      m.bindPopup('loading...', { maxWidth: 320 });
+      m.on('popupopen', async () => {
+        try {
+          const detail = await fetch(`api/pin/${id}`).then(r => r.json());
+          m.setPopupContent(buildPopup(detail));
+        } catch (e) {
+          m.setPopupContent('failed to load');
+        }
+      });
+      m.addTo(liveLayer);
+      pinsById.set(id, { marker: m, ts: f.properties.ts });
+    }
+  }
+  // Fade-out + remove pins not in current set.
+  for (const [id, info] of pinsById) {
+    if (!seen.has(id)) {
+      const el = info.marker.getElement();
+      if (el) el.style.opacity = '0';
+      setTimeout(() => {
+        liveLayer.removeLayer(info.marker);
+        pinsById.delete(id);
+      }, FADE_MS);
+    }
+  }
+}
+
+// ---- history mode ----------------------------------------------------
+let histPins = [];
+let histWindowSec = 86400;
+
+async function refreshHistory() {
+  const hideLow = document.getElementById('hide-low').checked;
+  const minConf = hideLow ? 0.4 : 0.0;
+  const win = document.getElementById('hist-window').value;
+  let resp;
+  try {
+    resp = await fetch(`api/pins/all?since=${win}&min_confidence=${minConf}&limit=2000`);
+  } catch (e) {
+    return;
+  }
+  const data = await resp.json();
+  histPins = data.features || [];
+  histWindowSec = (data.now || (Date.now()/1000)) - data.since_ts;
+  document.getElementById('pin-count').textContent = histPins.length;
+  document.getElementById('updated').textContent = 'history loaded';
+  applyHistorySlider();
+}
+
+function applyHistorySlider() {
+  histLayer.clearLayers();
+  const slider = document.getElementById('time-slider');
+  const cutoffFrac = parseInt(slider.value, 10) / 100.0;
+  const since = (histPins.length && histPins[histPins.length - 1].properties.ts) || 0;
+  const until = Date.now() / 1000;
+  const cutoff = since + (until - since) * cutoffFrac;
+  document.getElementById('time-label').textContent =
+    cutoffFrac >= 0.999 ? 'now' : new Date(cutoff * 1000).toLocaleString();
+  let shown = 0;
+  for (const f of histPins) {
+    if (f.properties.ts > cutoff) continue;
+    const [lon, lat] = f.geometry.coordinates;
+    const m = L.marker([lat, lon], {
+      icon: pinIcon(f.properties.kind, f.properties.confidence),
+    });
+    m.bindPopup(buildPopup({
+      ...f.properties,
+      audio_url: null,    // popup will fetch on open
+    }), { maxWidth: 320 });
+    m.on('popupopen', async () => {
+      try {
+        const detail = await fetch(`api/pin/${f.id}`).then(r => r.json());
+        m.setPopupContent(buildPopup(detail));
+      } catch (e) {}
+    });
+    m.addTo(histLayer);
+    shown++;
+  }
+  document.getElementById('pin-count').textContent = shown;
+}
+
+// ---- mode switch -----------------------------------------------------
+function setMode(m) {
+  mode = m;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  document.getElementById('mode-live').classList.toggle('active', m === 'live');
+  document.getElementById('mode-hist').classList.toggle('active', m === 'history');
+  document.getElementById('hist-controls').style.display = m === 'history' ? '' : 'none';
+  if (m === 'live') {
+    map.removeLayer(histLayer);
+    map.addLayer(liveLayer);
+    refreshLive();
+    pollTimer = setInterval(refreshLive, 30000);
+  } else {
+    map.removeLayer(liveLayer);
+    map.addLayer(histLayer);
+    refreshHistory();
+  }
+}
+
+document.getElementById('mode-live').addEventListener('click', () => setMode('live'));
+document.getElementById('mode-hist').addEventListener('click', () => setMode('history'));
+document.getElementById('hist-window').addEventListener('change', refreshHistory);
+document.getElementById('time-slider').addEventListener('input', applyHistorySlider);
+document.getElementById('hide-low').addEventListener('change', () => {
+  if (mode === 'live') refreshLive(); else refreshHistory();
+});
+
+// ---- health poll -----------------------------------------------------
+async function refreshHealth() {
+  try {
+    const h = await fetch('api/geo/health').then(r => r.json());
+    document.getElementById('meta').textContent =
+      `${h.gazetteer_size || 0} places · ${h.total_pins || 0} pins all-time`;
+    document.getElementById('cache-count').textContent = h.cache_entries || 0;
+    document.getElementById('geo-status').textContent =
+      h.external_enabled ? 'live' : 'cache-only';
+  } catch (e) {}
+}
+
+setMode('live');
+refreshHealth();
+setInterval(refreshHealth, 60000);
+</script>
+</body></html>
