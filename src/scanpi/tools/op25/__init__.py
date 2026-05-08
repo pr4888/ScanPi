@@ -335,9 +335,16 @@ class OP25Tool(Tool):
             return {"hours": hours, "talkgroups": self._db.talkgroup_stats(since_ts=since)}
 
         @r.get("/recent")
-        def recent(limit: int = 50):
+        def recent(limit: int = 50, tgid: int | None = None):
             if not self._db:
                 return {"calls": []}
+            if tgid is not None:
+                rows = self._db.conn.execute(
+                    "SELECT * FROM p25_calls WHERE tgid = ? "
+                    "ORDER BY start_ts DESC LIMIT ?",
+                    (tgid, limit),
+                ).fetchall()
+                return {"calls": [dict(r) for r in rows], "tgid": tgid}
             return {"calls": self._db.recent(limit)}
 
         @r.get("/talkgroups")

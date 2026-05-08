@@ -220,9 +220,18 @@ async function refresh() {
         <td class="num">${fmt.dur(t.total_airtime_s)}</td>
         <td class="num">${fmt.dur(t.avg_duration_s)}</td>
         <td>${fmt.ago(t.last_active)}</td>`;
-      tr.addEventListener("click", () => {
-        searchAll.value = t.tg_name || String(t.tgid);
-        searchAll.dispatchEvent(new Event("input"));
+      tr.addEventListener("click", async () => {
+        // Filter Recent strictly by tgid (works even if TG hasn't transmitted in hours)
+        searchAll.value = "";
+        srCount.textContent = `TG ${t.tgid} · loading...`;
+        try {
+          const resp = await fetch(`api/recent?tgid=${t.tgid}&limit=200`).then(r => r.json());
+          const calls = resp.calls || [];
+          srCount.textContent = `TG ${t.tgid} (${t.tg_name || "unnamed"}) · ${calls.length} calls`;
+          renderRecentResults(calls);
+        } catch (e) {
+          srCount.textContent = `TG ${t.tgid} · error`;
+        }
         document.getElementById("recent").scrollIntoView({behavior:"smooth"});
       });
       st.appendChild(tr);
